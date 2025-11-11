@@ -13,12 +13,27 @@ return new class extends Migration
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
-            $table->string('name');
+            $table->string('full_name');
+            $table->string('employee_id')->unique()->comment('NIK or Employee ID');
             $table->string('email')->unique();
-            $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
+            $table->enum('role', ['anggota', 'manager', 'admin'])->default('anggota')
+                  ->comment('anggota=member, manager=manager, admin=admin');
+            $table->boolean('is_active')->default(true);
+            $table->string('phone_number')->nullable();
+            $table->text('address')->nullable();
+            $table->string('work_unit')->nullable();
+            $table->string('position')->nullable();
+            $table->date('joined_at')->nullable();
             $table->rememberToken();
             $table->timestamps();
+            $table->softDeletes();
+            
+            // Indexes
+            $table->index('employee_id');
+            $table->index('email');
+            $table->index('role');
+            $table->index('is_active');
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {
