@@ -11,18 +11,20 @@ return new class extends Migration
         Schema::create('gifts', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
-            $table->foreignId('cash_account_id')->constrained('cash_accounts')->onDelete('cascade');
-            $table->text('gift_description');
-            $table->decimal('gift_amount', 15, 2)->nullable()->comment('If gift is money');
-            $table->date('given_date');
-            $table->foreignId('given_by')->constrained('users');
+            $table->enum('gift_type', ['holiday', 'achievement', 'birthday', 'special_event', 'loyalty']);
+            $table->string('gift_name');
+            $table->decimal('gift_value', 15, 2)->comment('Gift value in rupiah');
+            $table->date('distribution_date');
+            $table->enum('status', ['pending', 'distributed', 'cancelled'])->default('pending');
             $table->text('notes')->nullable();
+            $table->foreignId('distributed_by')->nullable()->constrained('users');
             $table->timestamps();
             
             // Indexes
             $table->index('user_id');
-            $table->index('cash_account_id');
-            $table->index('given_date');
+            $table->index('gift_type');
+            $table->index('status');
+            $table->index('distribution_date');
         });
     }
 

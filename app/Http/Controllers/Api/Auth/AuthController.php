@@ -81,6 +81,15 @@ class AuthController extends Controller
                 return $this->errorResponse('Invalid credentials', 401);
             }
 
+            // Log successful login
+            \App\Models\ActivityLog::createLog([
+                'user_id' => $request->user()->id,
+                'activity' => 'login',
+                'module' => 'auth',
+                'description' => "{$request->user()->full_name} login ke sistem",
+            ]);
+
+
             // Get authenticated user
             $user = auth()->user();
 
@@ -153,6 +162,18 @@ class AuthController extends Controller
     {
         try {
             JWTAuth::invalidate(JWTAuth::getToken());
+
+            $user = auth()->user();
+
+            // Log logout
+            if ($user) {
+                \App\Models\ActivityLog::createLog([
+                    'user_id' => $user->id,
+                    'activity' => 'logout',
+                    'module' => 'auth',
+                    'description' => "{$user->full_name} logout dari sistem",
+                ]);
+            }
 
             return $this->successResponse(null, 'Logout successful');
 

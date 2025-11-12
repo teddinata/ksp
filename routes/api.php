@@ -150,7 +150,7 @@ Route::middleware(['jwt.auth'])->group(function () {
 | Savings Routes
 |--------------------------------------------------------------------------
 */
-Route::middleware(['jwt.auth'])->group(function () {
+Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
     
     // Savings
     Route::prefix('savings')->group(function () {
@@ -179,7 +179,7 @@ Route::middleware(['jwt.auth'])->group(function () {
 | Loans Routes
 |--------------------------------------------------------------------------
 */
-Route::middleware(['jwt.auth'])->group(function () {
+Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
     
     // Loans
     Route::prefix('loans')->group(function () {
@@ -213,5 +213,137 @@ Route::middleware(['jwt.auth'])->group(function () {
         Route::get('/{id}', [App\Http\Controllers\Api\InstallmentController::class, 'show']);
         Route::post('/{id}/pay', [App\Http\Controllers\Api\InstallmentController::class, 'pay'])
             ->middleware('role:admin,manager');
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Members Routes
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
+    
+    // Members
+    Route::prefix('members')->group(function () {
+        // Profile (accessible by all authenticated users)
+        Route::get('/profile', [App\Http\Controllers\Api\MemberController::class, 'profile']);
+        
+        // Statistics (Admin & Manager only)
+        Route::get('/statistics', [App\Http\Controllers\Api\MemberController::class, 'statistics'])
+            ->middleware('role:admin,manager');
+        
+        // List members (Admin & Manager only)
+        Route::get('/', [App\Http\Controllers\Api\MemberController::class, 'index'])
+            ->middleware('role:admin,manager');
+        
+        // Member details (accessible with access control)
+        Route::get('/{id}', [App\Http\Controllers\Api\MemberController::class, 'show']);
+        
+        // Update profile (accessible with access control)
+        Route::put('/{id}', [App\Http\Controllers\Api\MemberController::class, 'update']);
+        
+        // Change password (accessible with access control)
+        Route::post('/{id}/change-password', [App\Http\Controllers\Api\MemberController::class, 'changePassword']);
+        
+        // Financial summary (accessible with access control)
+        Route::get('/{id}/financial-summary', [App\Http\Controllers\Api\MemberController::class, 'financialSummary']);
+        
+        // Activity history (accessible with access control)
+        Route::get('/{id}/activity-history', [App\Http\Controllers\Api\MemberController::class, 'activityHistory']);
+        
+        // Update status (Admin only)
+        Route::post('/{id}/update-status', [App\Http\Controllers\Api\MemberController::class, 'updateStatus'])
+            ->middleware('role:admin');
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Service Allowances Routes
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
+    
+    // Service Allowances
+    Route::prefix('service-allowances')->group(function () {
+        // Read operations (All authenticated users with access control)
+        Route::get('/', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'index']);
+        Route::get('/period-summary', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'periodSummary']);
+        Route::get('/member/{userId}/history', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'memberHistory']);
+        Route::get('/{id}', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'show']);
+        
+        // Distribution & Payment (Admin & Manager only)
+        Route::post('/distribute', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'distribute'])
+            ->middleware('role:admin,manager');
+        Route::post('/calculate', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'calculate'])
+            ->middleware('role:admin,manager');
+        Route::post('/{id}/mark-as-paid', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'markAsPaid'])
+            ->middleware('role:admin,manager');
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Gifts Routes
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['jwt.auth'])->group(function () {
+    
+    // Gifts
+    Route::prefix('gifts')->group(function () {
+        // Read operations (All authenticated users with access control)
+        Route::get('/', [App\Http\Controllers\Api\GiftController::class, 'index']);
+        Route::get('/statistics', [App\Http\Controllers\Api\GiftController::class, 'statistics']);
+        Route::get('/type/{type}', [App\Http\Controllers\Api\GiftController::class, 'getByType']);
+        Route::get('/member/{userId}/history', [App\Http\Controllers\Api\GiftController::class, 'memberHistory']);
+        Route::get('/{id}', [App\Http\Controllers\Api\GiftController::class, 'show']);
+        
+        // Write operations (Admin & Manager only)
+        Route::post('/', [App\Http\Controllers\Api\GiftController::class, 'store'])
+            ->middleware('role:admin,manager');
+        Route::put('/{id}', [App\Http\Controllers\Api\GiftController::class, 'update'])
+            ->middleware('role:admin,manager');
+        Route::delete('/{id}', [App\Http\Controllers\Api\GiftController::class, 'destroy'])
+            ->middleware('role:admin,manager');
+        Route::post('/{id}/mark-as-distributed', [App\Http\Controllers\Api\GiftController::class, 'markAsDistributed'])
+            ->middleware('role:admin,manager');
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Dashboard Routes
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['jwt.auth'])->group(function () {
+    
+    // Dashboard
+    Route::prefix('dashboard')->group(function () {
+        // Admin Dashboard (Admin & Manager only)
+        Route::get('/admin', [App\Http\Controllers\Api\DashboardController::class, 'adminDashboard'])
+            ->middleware('role:admin,manager');
+        
+        // Member Dashboard (Members only)
+        Route::get('/member', [App\Http\Controllers\Api\DashboardController::class, 'memberDashboard'])
+            ->middleware('role:anggota');
+        
+        // Quick Stats (All users)
+        Route::get('/quick-stats', [App\Http\Controllers\Api\DashboardController::class, 'quickStats']);
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Activity Logs Routes
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['jwt.auth'])->group(function () {
+    
+    // Activity Logs (Admin & Manager only)
+    Route::prefix('activity-logs')->middleware('role:admin,manager')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\ActivityLogController::class, 'index']);
+        Route::get('/statistics', [App\Http\Controllers\Api\ActivityLogController::class, 'statistics']);
+        Route::get('/user/{userId}/history', [App\Http\Controllers\Api\ActivityLogController::class, 'userHistory']);
+        Route::get('/{id}', [App\Http\Controllers\Api\ActivityLogController::class, 'show']);
     });
 });

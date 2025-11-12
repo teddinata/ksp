@@ -149,4 +149,194 @@ class User extends Authenticatable implements JWTSubject
     {
         return $query->where('role', $role);
     }
+
+    /**
+     * Scope query for inactive users.
+     */
+    public function scopeInactive($query)
+    {
+        return $query->where('status', 'inactive');
+    }
+
+    /**
+     * Scope query for suspended users.
+     */
+    public function scopeSuspended($query)
+    {
+        return $query->where('status', 'suspended');
+    }
+
+    /**
+     * Scope query for members only.
+     */
+    public function scopeMembers($query)
+    {
+        return $query->where('role', 'anggota');
+    }
+
+    /**
+     * Get user's savings.
+     */
+    public function savings()
+    {
+        return $this->hasMany(Saving::class, 'user_id');
+    }
+
+    /**
+     * Get user's loans.
+     */
+    public function loans()
+    {
+        return $this->hasMany(Loan::class, 'user_id');
+    }
+
+    /**
+     * Get total savings balance.
+     */
+    public function getTotalSavingsAttribute(): float
+    {
+        return $this->savings()
+            ->where('status', 'approved')
+            ->sum('final_amount');
+    }
+
+    /**
+     * Get savings by type.
+     */
+    public function getSavingsByType(string $type): float
+    {
+        return $this->savings()
+            ->where('savings_type', $type)
+            ->where('status', 'approved')
+            ->sum('final_amount');
+    }
+
+    /**
+     * Get active loans.
+     */
+    public function getActiveLoansAttribute()
+    {
+        return $this->loans()
+            ->whereIn('status', ['disbursed', 'active'])
+            ->get();
+    }
+
+    /**
+     * Get total loan balance.
+     */
+    public function getTotalLoanBalanceAttribute(): float
+    {
+        return $this->active_loans->sum('remaining_principal');
+    }
+
+    /**
+     * Get monthly installment obligation.
+     */
+    public function getMonthlyInstallmentAttribute(): float
+    {
+        return $this->active_loans->sum('installment_amount');
+    }
+
+    /**
+     * Get financial summary.
+     */
+    public function getFinancialSummary(): array
+    {
+        return [
+            'savings' => [
+                'total' => $this->total_savings,
+                'principal' => $this->getSavingsByType('principal'),
+                'mandatory' => $this->getSavingsByType('mandatory'),
+                'voluntary' => $this->getSavingsByType('voluntary'),
+                'holiday' => $this->getSavingsByType('holiday'),
+            ],
+            'loans' => [
+                'active_count' => $this->active_loans->count(),
+                'total_borrowed' => $this->active_loans->sum('principal_amount'),
+                'remaining_balance' => $this->total_loan_balance,
+                'monthly_installment' => $this->monthly_installment,
+            ],
+            'net_position' => $this->total_savings - $this->total_loan_balance,
+        ];
+    }
+
+    /**
+     * Check if member has overdue installments.
+     */
+    public function hasOverdueInstallments(): bool
+    {
+        return Installment::whereHas('loan', function($q) {
+            $q->where('user_id', $this->id);
+        })
+        ->where('status', 'overdue')
+        ->exists();
+    }
+
+    /**
+     * Get membership duration in months.
+     */
+    public function getMembershipDurationAttribute(): int
+    {
+        if (!$this->joined_date) {
+            return 0;
+        }
+        
+        return $this->joined_date->diffInMonths(now());
+    }
+
+    /**
+     * Get membership status display.
+     */
+    public function getMembershipStatusAttribute(): string
+    {
+        if (!$this->isMember()) {
+            return 'Not a member';
+        }
+
+        if ($this->hasOverdueInstallments()) {
+            return 'Has overdue payments';
+        }
+
+        return match($this->status) {
+            'active' => 'Active member',
+            'inactive' => 'Inactive',
+            'suspended' => 'Suspended',
+            default => $this->status,
+        };
+    }
+
+    /**
+     * Format phone number for display.
+     */
+    public function getFormattedPhoneAttribute(): ?string
+    {
+        if (!$this->phone_number) {
+            return null;
+        }
+
+        // Format: 0812-3456-7890
+        $phone = preg_replace('/[^0-9]/', '', $this->phone_number);
+        
+        if (strlen($phone) >= 10) {
+            return substr($phone, 0, 4) . '-' . 
+                   substr($phone, 4, 4) . '-' . 
+                   substr($phone, 8);
+        }
+
+        return $this->phone_number;
+    }
+
+    /**
+     * Get initials for avatar.
+     */
+    public function getInitialsAttribute(): string
+    {
+        $words = explode(' ', $this->full_name);
+        
+        if (count($words) >= 2) {
+            return strtoupper(substr($words[0], 0, 1) . substr($words[1], 0, 1));
+        }
+        
+        return strtoupper(substr($this->full_name, 0, 2));
+    }
 }

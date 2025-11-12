@@ -19,6 +19,8 @@ class DatabaseSeeder extends Seeder
             AccountingPeriodSeeder::class,
             SavingSeeder::class,
             LoanSeeder::class,
+            ServiceAllowanceSeeder::class,
+            GiftSeeder::class,
         ]);
     }
 }

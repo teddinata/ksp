@@ -11,20 +11,23 @@ return new class extends Migration
         Schema::create('service_allowances', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
-            $table->decimal('amount', 15, 2);
-            $table->decimal('installment_deduction', 15, 2)->default(0);
-            $table->decimal('remaining_amount', 15, 2)->default(0);
-            $table->string('period')->comment('Format: YYYY-MM, example: 2025-01');
-            $table->foreignId('uploaded_by')->constrained('users');
-            $table->date('upload_date');
+            $table->integer('period_month')->comment('1-12');
+            $table->integer('period_year')->comment('YYYY');
+            $table->decimal('base_amount', 15, 2)->default(0);
+            $table->decimal('savings_bonus', 15, 2)->default(0);
+            $table->decimal('loan_bonus', 15, 2)->default(0);
+            $table->decimal('total_amount', 15, 2);
+            $table->enum('status', ['pending', 'paid', 'cancelled'])->default('pending');
+            $table->date('payment_date')->nullable();
             $table->text('notes')->nullable();
+            $table->foreignId('distributed_by')->nullable()->constrained('users');
             $table->timestamps();
             
             // Indexes
             $table->index('user_id');
-            $table->index('period');
-            $table->index('upload_date');
-            $table->unique(['user_id', 'period']);
+            $table->index(['period_month', 'period_year']);
+            $table->index('status');
+            $table->unique(['user_id', 'period_month', 'period_year']);
         });
     }
 
