@@ -15,11 +15,14 @@ return new class extends Migration
             $table->enum('category', ['land', 'building', 'vehicle', 'equipment', 'inventory']);
             $table->decimal('acquisition_cost', 15, 2);
             $table->date('acquisition_date');
-            $table->integer('useful_life_months');
-            $table->decimal('book_value', 15, 2)->comment('Acquisition cost - accumulated depreciation');
+            $table->integer('useful_life_months')->comment('0 for land (no depreciation)');
+            $table->decimal('residual_value', 15, 2)->default(0)->comment('Salvage value at end of useful life');
+            $table->decimal('depreciation_per_month', 15, 2)->default(0);
             $table->decimal('accumulated_depreciation', 15, 2)->default(0);
+            $table->decimal('book_value', 15, 2)->comment('Acquisition cost - accumulated depreciation');
+            $table->date('last_depreciation_date')->nullable()->comment('Last calculated depreciation');
             $table->string('location')->nullable();
-            $table->enum('status', ['active', 'damaged', 'sold', 'lost'])->default('active');
+            $table->enum('status', ['active', 'damaged', 'sold', 'disposed'])->default('active');
             $table->text('notes')->nullable();
             $table->timestamps();
             $table->softDeletes();
@@ -28,6 +31,7 @@ return new class extends Migration
             $table->index('asset_code');
             $table->index('category');
             $table->index('status');
+            $table->index('acquisition_date');
         });
     }
 

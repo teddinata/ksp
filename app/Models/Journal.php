@@ -1,0 +1,207 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
+
+class Journal extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'journal_number',
+        'accounting_period_id',
+        'journal_type',
+        'description',
+        'transaction_date',
+        'total_debit',
+        'total_credit',
+        'created_by',
+        'is_locked',
+        'is_balanced',
+        'reference_type',
+        'reference_id',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'transaction_date' => 'date',
+            'total_debit' => 'decimal:2',
+            'total_credit' => 'decimal:2',
+            'is_locked' => 'boolean',
+            'is_balanced' => 'boolean',
+        ];
+    }
+
+    /**
+     * Get journal details.
+     */
+    public function details()
+    {
+        return $this->hasMany(JournalDetail::class, 'journal_id');
+    }
+
+    /**
+     * Get accounting period.
+     */
+    public function accountingPeriod()
+    {
+        return $this->belongsTo(AccountingPeriod::class, 'accounting_period_id');
+    }
+
+    /**
+     * Get creator.
+     */
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Get the parent referenceable model (Saving, Loan, etc).
+     */
+    public function reference(): MorphTo
+    {
+        return $this->morphTo();
+    }
+
+    /**
+     * Scope by journal type.
+     */
+    public function scopeByType($query, string $type)
+    {
+        return $query->where('journal_type', $type);
+    }
+
+    /**
+     * Scope by period.
+     */
+    public function scopeByPeriod($query, int $periodId)
+    {
+        return $query->where('accounting_period_id', $periodId);
+    }
+
+    /**
+     * Scope unlocked journals.
+     */
+    public function scopeUnlocked($query)
+    {
+        return $query->where('is_locked', false);
+    }
+
+    /**
+     * Scope locked journals.
+     */
+    public function scopeLocked($query)
+    {
+        return $query->where('is_locked', true);
+    }
+
+    /**
+     * Scope date range.
+     */
+    public function scopeDateRange($query, $startDate, $endDate)
+    {
+        return $query->whereBetween('transaction_date', [$startDate, $endDate]);
+    }
+
+    /**
+     * Get journal type display name.
+     */
+    public function getTypeNameAttribute(): string
+    {
+        return match($this->journal_type) {
+            'general' => 'Jurnal Umum',
+            'special' => 'Jurnal Khusus',
+            'adjusting' => 'Jurnal Penyesuaian',
+            'closing' => 'Jurnal Penutup',
+            'reversing' => 'Jurnal Pembalik',
+            default => $this->journal_type,
+        };
+    }
+
+    /**
+     * Check if journal is balanced.
+     */
+    public function isBalanced(): bool
+    {
+        return $this->total_debit == $this->total_credit;
+    }
+
+    /**
+     * Lock journal.
+     */
+    public function lock(): void
+    {
+        $this->update(['is_locked' => true]);
+    }
+
+    /**
+     * Generate journal number.
+     */
+    public static function generateJournalNumber(string $type): string
+    {
+        $prefix = match($type) {
+            'general' => 'JU',
+            'special' => 'JK',
+            'adjusting' => 'JP',
+            'closing' => 'JPT',
+            'reversing' => 'JPB',
+            default => 'JU',
+        };
+
+        $date = now()->format('Ymd');
+        $count = self::whereDate('created_at', today())
+            ->where('journal_type', $type)
+            ->count() + 1;
+
+        return "{$prefix}-{$date}-" . str_pad($count, 4, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Calculate totals from details.
+     */
+    public function calculateTotals(): void
+    {
+        $this->total_debit = $this->details()->sum('debit');
+        $this->total_credit = $this->details()->sum('credit');
+        $this->is_balanced = $this->total_debit == $this->total_credit;
+        $this->save();
+    }
+
+    /**
+     * Create journal with details.
+     */
+    public static function createWithDetails(array $data): self
+    {
+        $journal = self::create([
+            'journal_number' => self::generateJournalNumber($data['journal_type']),
+            'accounting_period_id' => $data['accounting_period_id'] ?? null,
+            'journal_type' => $data['journal_type'],
+            'description' => $data['description'],
+            'transaction_date' => $data['transaction_date'],
+            'created_by' => auth()->id(),
+            'reference_type' => $data['reference_type'] ?? null,
+            'reference_id' => $data['reference_id'] ?? null,
+        ]);
+
+        // Create details
+        foreach ($data['details'] as $detail) {
+            JournalDetail::create([
+                'journal_id' => $journal->id,
+                'chart_of_account_id' => $detail['chart_of_account_id'],
+                'debit' => $detail['debit'] ?? 0,
+                'credit' => $detail['credit'] ?? 0,
+                'description' => $detail['description'] ?? null,
+            ]);
+        }
+
+        // Calculate totals
+        $journal->calculateTotals();
+
+        return $journal->fresh(['details']);
+    }
+}

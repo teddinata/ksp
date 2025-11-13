@@ -347,3 +347,44 @@ Route::middleware(['jwt.auth'])->group(function () {
         Route::get('/{id}', [App\Http\Controllers\Api\ActivityLogController::class, 'show']);
     });
 });
+
+/*
+|--------------------------------------------------------------------------
+| Journals Routes
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['jwt.auth'])->group(function () {
+    
+    // Journals (Admin & Manager only)
+    Route::prefix('journals')->middleware('role:admin,manager')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\JournalController::class, 'index']);
+        Route::post('/', [App\Http\Controllers\Api\JournalController::class, 'store']);
+        Route::get('/general-ledger', [App\Http\Controllers\Api\JournalController::class, 'generalLedger']);
+        Route::get('/trial-balance', [App\Http\Controllers\Api\JournalController::class, 'trialBalance']);
+        Route::get('/{id}', [App\Http\Controllers\Api\JournalController::class, 'show']);
+        Route::put('/{id}', [App\Http\Controllers\Api\JournalController::class, 'update']);
+        Route::delete('/{id}', [App\Http\Controllers\Api\JournalController::class, 'destroy']);
+        Route::post('/{id}/lock', [App\Http\Controllers\Api\JournalController::class, 'lock']);
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Assets Routes
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['jwt.auth'])->group(function () {
+    
+    // Assets (Admin & Manager only)
+    Route::prefix('assets')->middleware('role:admin,manager')->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\AssetController::class, 'index']);
+        Route::post('/', [App\Http\Controllers\Api\AssetController::class, 'store']);
+        Route::get('/summary', [App\Http\Controllers\Api\AssetController::class, 'summary']);
+        Route::post('/calculate-all-depreciation', [App\Http\Controllers\Api\AssetController::class, 'calculateAllDepreciation']);
+        Route::get('/{id}', [App\Http\Controllers\Api\AssetController::class, 'show']);
+        Route::put('/{id}', [App\Http\Controllers\Api\AssetController::class, 'update']);
+        Route::delete('/{id}', [App\Http\Controllers\Api\AssetController::class, 'destroy']);
+        Route::post('/{id}/calculate-depreciation', [App\Http\Controllers\Api\AssetController::class, 'calculateDepreciation']);
+        Route::get('/{id}/depreciation-schedule', [App\Http\Controllers\Api\AssetController::class, 'depreciationSchedule']);
+    });
+});

@@ -2,6 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Models\Asset;
+use App\Models\Journal;
 use App\Models\Saving;
 use Illuminate\Database\Seeder;
 
@@ -21,6 +23,8 @@ class DatabaseSeeder extends Seeder
             LoanSeeder::class,
             ServiceAllowanceSeeder::class,
             GiftSeeder::class,
+            JournalSeeder::class,
+            AssetSeeder::class,
         ]);
     }
 }
