@@ -60,14 +60,14 @@ class MemberController extends Controller
 
             // Filter by join date range
             if ($request->has('joined_from') && $request->has('joined_to')) {
-                $query->whereBetween('joined_date', [
+                $query->whereBetween('joined_at', [
                     $request->joined_from,
                     $request->joined_to
                 ]);
             }
 
             // Sort
-            $sortBy = $request->get('sort_by', 'joined_date');
+            $sortBy = $request->get('sort_by', 'joined_at');
             $sortOrder = $request->get('sort_order', 'desc');
             $query->orderBy($sortBy, $sortOrder);
 
@@ -133,7 +133,7 @@ class MemberController extends Controller
                 'address' => $member->address,
                 'role' => $member->role,
                 'status' => $member->status,
-                'joined_date' => $member->joined_date?->format('Y-m-d'),
+                'joined_at' => $member->joined_at?->format('Y-m-d'),
                 'membership_duration' => $member->membership_duration,
                 'membership_status' => $member->membership_status,
                 'initials' => $member->initials,
@@ -190,7 +190,7 @@ class MemberController extends Controller
                     'address' => $member->address,
                     'role' => $member->role,
                     'status' => $member->status,
-                    'joined_date' => $member->joined_date?->format('Y-m-d'),
+                    'joined_at' => $member->joined_at?->format('Y-m-d'),
                     'membership_duration' => $member->membership_duration . ' months',
                     'membership_status' => $member->membership_status,
                     'initials' => $member->initials,
@@ -477,8 +477,8 @@ class MemberController extends Controller
                 'inactive_members' => User::members()->inactive()->count(),
                 'suspended_members' => User::members()->suspended()->count(),
                 'new_members_this_month' => User::members()
-                    ->whereMonth('joined_date', now()->month)
-                    ->whereYear('joined_date', now()->year)
+                    ->whereMonth('joined_at', now()->month)
+                    ->whereYear('joined_at', now()->year)
                     ->count(),
                 'members_with_active_loans' => User::members()
                     ->whereHas('loans', function($q) {
