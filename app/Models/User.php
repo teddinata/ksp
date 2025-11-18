@@ -23,6 +23,7 @@ class User extends Authenticatable implements JWTSubject
         'email',
         'password',
         'role',
+        'status',  // TAMBAHKAN INI
         'is_active',
         'phone_number',
         'address',
@@ -277,15 +278,16 @@ class User extends Authenticatable implements JWTSubject
      */
     public function getMembershipDurationAttribute(): int
     {
-        if (!$this->joined_date) {
+        if (!$this->joined_at) {  // PERBAIKI: joined_date -> joined_at
             return 0;
         }
         
-        return $this->joined_date->diffInMonths(now());
+        return $this->joined_at->diffInMonths(now());
     }
 
     /**
      * Get membership status display.
+     * PERBAIKI: Pastikan selalu return string
      */
     public function getMembershipStatusAttribute(): string
     {
@@ -297,11 +299,12 @@ class User extends Authenticatable implements JWTSubject
             return 'Has overdue payments';
         }
 
-        return match($this->status) {
+        // PERBAIKI: Tambahkan fallback jika status null
+        return match($this->status ?? 'active') {
             'active' => 'Active member',
             'inactive' => 'Inactive',
             'suspended' => 'Suspended',
-            default => $this->status,
+            default => 'Active member',  // Default fallback
         };
     }
 

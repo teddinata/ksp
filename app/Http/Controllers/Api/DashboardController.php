@@ -75,7 +75,7 @@ class DashboardController extends Controller
                     'full_name' => $user->full_name,
                     'employee_id' => $user->employee_id,
                     'email' => $user->email,
-                    'joined_date' => $user->joined_date?->format('d F Y'),
+                    'joined_at' => $user->joined_at?->format('d F Y'),
                     'membership_duration' => $user->membership_duration . ' bulan',
                     'status' => $user->membership_status,
                 ],
@@ -115,8 +115,8 @@ class DashboardController extends Controller
                 'inactive' => User::members()->inactive()->count(),
                 'suspended' => User::members()->suspended()->count(),
                 'new_this_month' => User::members()
-                    ->whereYear('joined_date', $currentYear)
-                    ->whereMonth('joined_date', $currentMonth)
+                    ->whereYear('joined_at', $currentYear)
+                    ->whereMonth('joined_at', $currentMonth)
                     ->count(),
             ],
             'savings' => [
@@ -330,7 +330,7 @@ class DashboardController extends Controller
             $memberGrowth[] = [
                 'month' => $date->format('M Y'),
                 'count' => User::members()
-                    ->where('joined_date', '<=', $date->endOfMonth())
+                    ->where('joined_at', '<=', $date->endOfMonth())
                     ->count(),
             ];
         }
