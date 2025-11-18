@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class Installment extends Model
 {
@@ -191,20 +192,34 @@ class Installment extends Model
 
     /**
      * Mark as paid.
+     * UPDATED: Now also updates remaining_principal in Loan
      */
     public function markAsPaid(string $method, ?int $confirmedBy = null, ?string $notes = null): void
     {
-        $this->update([
-            'status' => $method === 'service_allowance' ? 'auto_paid' : 'paid',
-            'payment_date' => now(),
-            'paid_amount' => $this->total_amount,
-            'payment_method' => $method,
-            'notes' => $notes,
-            'confirmed_by' => $confirmedBy,
-        ]);
+        DB::transaction(function () use ($method, $confirmedBy, $notes) {
+            // Update installment status
+            $this->update([
+                'status' => $method === 'service_allowance' ? 'auto_paid' : 'paid',
+                'payment_date' => now(),
+                'paid_amount' => $this->total_amount,
+                'payment_method' => $method,
+                'notes' => $notes,
+                'confirmed_by' => $confirmedBy,
+            ]);
 
-        // Check if loan is fully paid
-        $this->loan->checkIfPaidOff();
+            // Update remaining_principal in Loan
+            $loan = $this->loan;
+            $newRemainingPrincipal = $loan->remaining_principal - $this->principal_amount;
+            
+            $loan->update([
+                'remaining_principal' => max(0, $newRemainingPrincipal),
+            ]);
+
+            // Check if loan is fully paid
+            if ($newRemainingPrincipal <= 0) {
+                $loan->update(['status' => 'paid_off']);
+            }
+        });
     }
 
     /**

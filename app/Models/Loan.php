@@ -28,6 +28,7 @@ class Loan extends Model
         'cash_account_id',
         'loan_number',
         'principal_amount',
+        'remaining_principal',
         'interest_percentage',
         'tenure_months',
         'installment_amount',

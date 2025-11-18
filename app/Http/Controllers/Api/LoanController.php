@@ -334,6 +334,7 @@ class LoanController extends Controller
                     'status' => 'disbursed',
                     'approval_date' => now(),
                     'disbursement_date' => $request->disbursement_date,
+                    'remaining_principal' => $loan->principal_amount,
                     'approved_by' => $user->id,
                 ]);
 
