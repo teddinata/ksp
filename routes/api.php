@@ -218,7 +218,7 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| Members Routes
+| Members Routes (UPDATED with CREATE)
 |--------------------------------------------------------------------------
 */
 Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
@@ -230,6 +230,10 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
         
         // Statistics (Admin & Manager only)
         Route::get('/statistics', [App\Http\Controllers\Api\MemberController::class, 'statistics'])
+            ->middleware('role:admin,manager');
+        
+        // Create member (Admin & Manager only) - NEW!
+        Route::post('/', [App\Http\Controllers\Api\MemberController::class, 'store'])
             ->middleware('role:admin,manager');
         
         // List members (Admin & Manager only)
@@ -256,6 +260,7 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
             ->middleware('role:admin');
     });
 });
+
 
 /*
 |--------------------------------------------------------------------------

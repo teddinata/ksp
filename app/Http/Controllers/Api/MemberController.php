@@ -506,6 +506,113 @@ class MemberController extends Controller
     }
 
     /**
+     * Store a new member.
+     * 
+     * Business Logic:
+     * - Admin/Manager can create new members
+     * - Auto-generate employee_id if not provided
+     * - Default role: member
+     * - Default status: active
+     * - Password is required and will be hashed
+     *
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function store(Request $request): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            // Access Control: Admin and Manager only
+            if ($user->isMember()) {
+                return $this->errorResponse(
+                    'Only administrators and managers can create new members',
+                    403
+                );
+            }
+
+            // Validation
+            $validated = $request->validate([
+                'full_name' => 'required|string|max:255',
+                'employee_id' => 'sometimes|string|unique:users,employee_id',
+                'email' => 'nullable|email|unique:users,email',
+                'password' => 'required|string|min:8|confirmed',
+                'phone_number' => 'nullable|string|max:20',
+                'address' => 'nullable|string',
+                'work_unit' => 'nullable|string|max:255',
+                'position' => 'nullable|string|max:255',
+                'joined_date' => 'nullable|date',
+                'status' => 'sometimes|in:active,inactive',
+            ]);
+
+            // Auto-generate employee_id if not provided
+            if (!isset($validated['employee_id'])) {
+                $validated['employee_id'] = 'EMP' . str_pad(
+                    User::members()->count() + 1, 
+                    6, 
+                    '0', 
+                    STR_PAD_LEFT
+                );
+            }
+
+            // Create member
+            $member = User::create([
+                'full_name' => $validated['full_name'],
+                'employee_id' => $validated['employee_id'],
+                'email' => $validated['email'] ?? null,
+                'password' => Hash::make($validated['password']),
+                'phone_number' => $validated['phone_number'] ?? null,
+                'address' => $validated['address'] ?? null,
+                'work_unit' => $validated['work_unit'] ?? null,
+                'position' => $validated['position'] ?? null,
+                'role' => 'member',
+                'status' => $validated['status'] ?? 'active',
+                'joined_date' => $validated['joined_date'] ?? now()->toDateString(),
+            ]);
+
+            // Add computed attributes
+            $memberData = [
+                'id' => $member->id,
+                'employee_id' => $member->employee_id,
+                'full_name' => $member->full_name,
+                'email' => $member->email,
+                'phone_number' => $member->phone_number,
+                'formatted_phone' => $member->formatted_phone,
+                'address' => $member->address,
+                'work_unit' => $member->work_unit,
+                'position' => $member->position,
+                'role' => $member->role,
+                'status' => $member->status,
+                'joined_date' => $member->joined_date?->format('Y-m-d'),
+                'membership_duration' => $member->membership_duration,
+                'membership_status' => $member->membership_status,
+                'initials' => $member->initials,
+                'created_at' => $member->created_at,
+                'updated_at' => $member->updated_at,
+            ];
+
+            return $this->successResponse(
+                $memberData,
+                'Member created successfully',
+                201
+            );
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return $this->errorResponse(
+                'Validation failed',
+                422,
+                $e->errors()
+            );
+        } catch (\Exception $e) {
+            return $this->errorResponse(
+                'Failed to create member: ' . $e->getMessage(),
+                500
+            );
+        }
+    }
+
+
+    /**
      * Suspend or activate member.
      *
      * @param Request $request
