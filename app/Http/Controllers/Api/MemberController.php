@@ -541,7 +541,7 @@ class MemberController extends Controller
                 'address' => 'nullable|string',
                 'work_unit' => 'nullable|string|max:255',
                 'position' => 'nullable|string|max:255',
-                'joined_date' => 'nullable|date',
+                'joined_at' => 'nullable|date',
                 'status' => 'sometimes|in:active,inactive',
             ]);
 
@@ -567,7 +567,7 @@ class MemberController extends Controller
                 'position' => $validated['position'] ?? null,
                 'role' => 'anggota',
                 'status' => $validated['status'] ?? 'active',
-                'joined_date' => $validated['joined_date'] ?? now()->toDateString(),
+                'joined_at' => $validated['joined_at'] ?? now()->toDateString(),
             ]);
 
             // Add computed attributes
@@ -583,7 +583,7 @@ class MemberController extends Controller
                 'position' => $member->position,
                 'role' => $member->role,
                 'status' => $member->status,
-                'joined_date' => $member->joined_date?->format('Y-m-d'),
+                'joined_at' => $member->joined_at?->format('Y-m-d'),
                 'membership_duration' => $member->membership_duration,
                 'membership_status' => $member->membership_status,
                 'initials' => $member->initials,
