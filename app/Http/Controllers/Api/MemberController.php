@@ -565,7 +565,7 @@ class MemberController extends Controller
                 'address' => $validated['address'] ?? null,
                 'work_unit' => $validated['work_unit'] ?? null,
                 'position' => $validated['position'] ?? null,
-                'role' => 'member',
+                'role' => 'anggota',
                 'status' => $validated['status'] ?? 'active',
                 'joined_date' => $validated['joined_date'] ?? now()->toDateString(),
             ]);
