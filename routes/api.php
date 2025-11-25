@@ -191,7 +191,7 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
         
         // Write operations (Admin & Manager only)
         Route::post('/', [App\Http\Controllers\Api\LoanController::class, 'store'])
-            ->middleware('role:admin,manager');
+            ->middleware('role:admin,manager,anggota');
         Route::put('/{id}', [App\Http\Controllers\Api\LoanController::class, 'update'])
             ->middleware('role:admin,manager');
         Route::delete('/{id}', [App\Http\Controllers\Api\LoanController::class, 'destroy'])
