@@ -93,6 +93,13 @@ class DashboardController extends Controller
             );
 
         } catch (\Exception $e) {
+            \Log::error('Member Dashboard Error', [
+                'user_id' => $user->id ?? null,
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+            
             return $this->errorResponse(
                 'Failed to retrieve dashboard: ' . $e->getMessage(),
                 500
@@ -399,22 +406,29 @@ class DashboardController extends Controller
      */
     private function getMemberRecentTransactions(int $userId): array
     {
+        // Get savings transactions
         $savings = Saving::where('user_id', $userId)
             ->with('cashAccount:id,code,name')
             ->latest('transaction_date')
             ->limit(5)
             ->get()
             ->map(function($saving) {
+                // ✅ FIX: Add null check for cash_account
+                $accountName = $saving->cashAccount 
+                    ? $saving->cashAccount->name 
+                    : 'Tidak ada kas';
+                
                 return [
                     'type' => 'saving',
                     'title' => $saving->type_name,
-                    'description' => $saving->cash_account->name,
+                    'description' => $accountName,
                     'amount' => $saving->final_amount,
                     'date' => $saving->transaction_date->format('d M Y'),
                     'status' => $saving->status,
                 ];
             });
 
+        // Get installment transactions
         $installments = Installment::whereHas('loan', function($q) use ($userId) {
             $q->where('user_id', $userId);
         })
@@ -423,9 +437,14 @@ class DashboardController extends Controller
         ->limit(5)
         ->get()
         ->map(function($installment) {
+            // ✅ FIX: Add null check for loan
+            $loanNumber = $installment->loan 
+                ? $installment->loan->loan_number 
+                : 'Unknown';
+            
             return [
                 'type' => 'installment',
-                'title' => 'Cicilan ' . $installment->loan->loan_number,
+                'title' => 'Cicilan ' . $loanNumber,
                 'description' => 'Angsuran ke-' . $installment->installment_number,
                 'amount' => $installment->total_amount,
                 'date' => $installment->payment_date?->format('d M Y') ?? $installment->due_date->format('d M Y'),
