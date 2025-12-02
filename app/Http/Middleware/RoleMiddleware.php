@@ -29,7 +29,8 @@ class RoleMiddleware
         if (!in_array($user->role, $roles)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Forbidden. You do not have permission to access this resource.',
+                // indonesian: 'Terlarang: Anda tidak memiliki peran yang diperlukan untuk mengakses sumber daya ini.'
+                'message' => 'Akses terbatas: Anda tidak memiliki peran yang diperlukan untuk mengakses fitur ini.',
                 'required_roles' => $roles,
                 'your_role' => $user->role
             ], 403);

@@ -218,4 +218,52 @@ class CashAccountManagerController extends Controller
             );
         }
     }
+
+    /**
+     * ✅ OPTIONAL ENHANCEMENT: Get available managers
+     * 
+     * List all users with admin/manager role that can be assigned
+     */
+    public function getAvailableManagers(): JsonResponse
+    {
+        try {
+            $managers = User::where(function($q) {
+                $q->where('role', 'admin')
+                  ->orWhere('role', 'manager');
+            })
+            ->where('status', 'active')
+            ->select('id', 'full_name', 'employee_id', 'email', 'role')
+            ->orderBy('full_name')
+            ->get();
+            
+            // Add info about current assignments
+            $managers->each(function($manager) {
+                $manager->assigned_cash_accounts = CashAccountManager::where('manager_id', $manager->id)
+                    ->where('is_active', true)
+                    ->with('cashAccount:id,code,name')
+                    ->get()
+                    ->map(function($assignment) {
+                        return [
+                            'id' => $assignment->cashAccount->id,
+                            'code' => $assignment->cashAccount->code,
+                            'name' => $assignment->cashAccount->name,
+                            'assigned_at' => $assignment->assigned_at,
+                        ];
+                    });
+                    
+                $manager->managed_cash_accounts_count = $manager->assigned_cash_accounts->count();
+            });
+            
+            return $this->successResponse(
+                $managers,
+                'Available managers retrieved successfully'
+            );
+            
+        } catch (\Exception $e) {
+            return $this->errorResponse(
+                'Failed to retrieve managers: ' . $e->getMessage(),
+                500
+            );
+        }
+    }
 }

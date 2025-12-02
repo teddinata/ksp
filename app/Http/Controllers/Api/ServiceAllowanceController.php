@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\ServiceAllowanceRequest;
 use App\Models\ServiceAllowance;
 use App\Models\User;
 use App\Traits\ApiResponse;
@@ -16,13 +15,6 @@ class ServiceAllowanceController extends Controller
 
     /**
      * Display a listing of service allowances.
-     * 
-     * Business Logic:
-     * - Admin/Manager: Can see all allowances
-     * - Member: Can only see their own allowances
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function index(Request $request): JsonResponse
     {
@@ -38,22 +30,19 @@ class ServiceAllowanceController extends Controller
                 $query->byUser($user->id);
             }
 
-            // Filter by user
+            // Filters
             if ($request->has('user_id') && ($user->isAdmin() || $user->isManager())) {
                 $query->byUser($request->user_id);
             }
 
-            // Filter by status
             if ($request->has('status')) {
                 $query->byStatus($request->status);
             }
 
-            // Filter by year
             if ($request->has('year')) {
                 $query->byYear($request->year);
             }
 
-            // Filter by period
             if ($request->has('month') && $request->has('year')) {
                 $query->byPeriod($request->month, $request->year);
             }
@@ -73,25 +62,13 @@ class ServiceAllowanceController extends Controller
             
             if ($request->has('all') && $request->boolean('all')) {
                 $allowances = $query->get();
-                
-                // Add computed attributes
-                $allowances->each(function($allowance) {
-                    $allowance->period_display = $allowance->period_display;
-                    $allowance->status_name = $allowance->status_name;
-                });
-
-                return $this->successResponse($allowances, 'Service allowances retrieved successfully');
             } else {
                 $allowances = $query->paginate($perPage);
-                
-                // Add computed attributes
-                $allowances->getCollection()->each(function($allowance) {
-                    $allowance->period_display = $allowance->period_display;
-                    $allowance->status_name = $allowance->status_name;
-                });
-
-                return $this->paginatedResponse($allowances, 'Service allowances retrieved successfully');
             }
+
+            return $request->has('all') 
+                ? $this->successResponse($allowances, 'Service allowances retrieved successfully')
+                : $this->paginatedResponse($allowances, 'Service allowances retrieved successfully');
 
         } catch (\Exception $e) {
             return $this->errorResponse(
@@ -103,9 +80,6 @@ class ServiceAllowanceController extends Controller
 
     /**
      * Display the specified service allowance.
-     *
-     * @param int $id
-     * @return JsonResponse
      */
     public function show(int $id): JsonResponse
     {
@@ -116,16 +90,12 @@ class ServiceAllowanceController extends Controller
                 'distributedBy:id,full_name'
             ]);
 
-            // Access Control: Member only sees own allowances
+            // Access Control
             if ($user->isMember()) {
                 $query->byUser($user->id);
             }
 
             $allowance = $query->findOrFail($id);
-
-            // Add computed attributes
-            $allowance->period_display = $allowance->period_display;
-            $allowance->status_name = $allowance->status_name;
 
             return $this->successResponse(
                 $allowance,
@@ -143,134 +113,150 @@ class ServiceAllowanceController extends Controller
     }
 
     /**
-     * Distribute service allowances to all members.
-     *
-     * @param ServiceAllowanceRequest $request
-     * @return JsonResponse
+     * ✅ NEW: Store (input manual) jasa pelayanan untuk 1 member
+     * 
+     * Business Logic:
+     * - Admin/Manager input manual per member per period
+     * - System auto-potong cicilan bulan itu
+     * - Jika kurang, member bayar sisa
+     * - Jika lebih, sisa dikembalikan
      */
-    public function distribute(ServiceAllowanceRequest $request): JsonResponse
+    public function store(Request $request): JsonResponse
     {
         try {
             $user = auth()->user();
 
-            $result = ServiceAllowance::distributeToMembers(
-                $request->period_month,
-                $request->period_year,
-                $user->id,
-                [
-                    'base_amount' => $request->base_amount,
-                    'savings_rate' => $request->savings_rate,
-                    'loan_rate' => $request->loan_rate,
-                ]
-            );
+            // Validation
+            $validated = $request->validate([
+                'user_id' => 'required|exists:users,id',
+                'period_month' => 'required|integer|min:1|max:12',
+                'period_year' => 'required|integer|min:2020|max:2100',
+                'received_amount' => 'required|numeric|min:0',
+                'notes' => 'nullable|string',
+            ]);
 
-            return $this->successResponse(
-                $result,
-                'Service allowances distributed successfully',
-                201
-            );
+            $member = User::findOrFail($validated['user_id']);
 
-        } catch (\Exception $e) {
-            return $this->errorResponse(
-                'Failed to distribute service allowances: ' . $e->getMessage(),
-                500
-            );
-        }
-    }
-
-    /**
-     * Mark service allowance as paid.
-     *
-     * @param Request $request
-     * @param int $id
-     * @return JsonResponse
-     */
-    public function markAsPaid(Request $request, int $id): JsonResponse
-    {
-        try {
-            $user = auth()->user();
-            $allowance = ServiceAllowance::findOrFail($id);
-
-            // Check if already paid
-            if ($allowance->isPaid()) {
+            // Check if member role
+            if (!$member->isMember()) {
                 return $this->errorResponse(
-                    'Service allowance is already paid',
+                    'User is not a member',
                     400
                 );
             }
 
-            $allowance->markAsPaid($user->id, $request->notes);
-
-            $allowance->load(['user:id,full_name,employee_id', 'distributedBy:id,full_name']);
-
-            return $this->successResponse(
-                $allowance,
-                'Service allowance marked as paid successfully'
+            // Process service allowance
+            $result = ServiceAllowance::processForMember(
+                $member,
+                $validated['period_month'],
+                $validated['period_year'],
+                $validated['received_amount'],
+                $user->id,
+                $validated['notes'] ?? null
             );
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return $this->errorResponse('Service allowance not found', 404);
+            return $this->successResponse(
+                $result,
+                'Jasa pelayanan berhasil diproses',
+                201
+            );
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return $this->errorResponse(
+                'Validation failed',
+                422,
+                $e->errors()
+            );
         } catch (\Exception $e) {
             return $this->errorResponse(
-                'Failed to mark as paid: ' . $e->getMessage(),
+                'Failed to process service allowance: ' . $e->getMessage(),
                 500
             );
         }
     }
 
     /**
-     * Calculate service allowance for a member (preview).
-     *
-     * @param Request $request
-     * @return JsonResponse
+     * Preview calculation before processing
      */
-    public function calculate(Request $request): JsonResponse
+    public function preview(Request $request): JsonResponse
     {
         try {
             $request->validate([
                 'user_id' => 'required|exists:users,id',
                 'period_month' => 'required|integer|min:1|max:12',
                 'period_year' => 'required|integer|min:2020|max:2100',
-                'base_amount' => 'required|numeric|min:0',
-                'savings_rate' => 'required|numeric|min:0|max:100',
-                'loan_rate' => 'required|numeric|min:0|max:100',
+                'received_amount' => 'required|numeric|min:0',
             ]);
 
-            $user = User::findOrFail($request->user_id);
+            $member = User::findOrFail($request->user_id);
 
-            $calculation = ServiceAllowance::calculateForMember(
-                $user,
-                $request->period_month,
-                $request->period_year,
-                $request->base_amount,
-                $request->savings_rate,
-                $request->loan_rate
-            );
+            // Get installments for preview
+            $startDate = \Carbon\Carbon::create($request->period_year, $request->period_month, 1)->startOfMonth();
+            $endDate = \Carbon\Carbon::create($request->period_year, $request->period_month, 1)->endOfMonth();
+            
+            $installments = \App\Models\Installment::whereHas('loan', function($q) use ($member) {
+                $q->where('user_id', $member->id)
+                  ->whereIn('status', ['disbursed', 'active']);
+            })
+            ->where('status', 'pending')
+            ->whereBetween('due_date', [$startDate, $endDate])
+            ->with('loan:id,loan_number')
+            ->get();
+            
+            $totalDue = $installments->sum('total_amount');
+            $receivedAmount = $request->received_amount;
+            
+            // Calculate preview
+            if ($receivedAmount >= $totalDue) {
+                $scenario = 'sufficient';
+                $paidAmount = $totalDue;
+                $remaining = $receivedAmount - $totalDue;
+                $memberMustPay = 0;
+            } else {
+                $scenario = 'insufficient';
+                $paidAmount = $receivedAmount;
+                $remaining = 0;
+                $memberMustPay = $totalDue - $receivedAmount;
+            }
 
-            return $this->successResponse(
-                [
-                    'user' => $user->only(['id', 'full_name', 'employee_id']),
-                    'period' => \Carbon\Carbon::create($request->period_year, $request->period_month, 1)->format('F Y'),
-                    'calculation' => $calculation,
+            return $this->successResponse([
+                'member' => $member->only(['id', 'full_name', 'employee_id']),
+                'period' => \Carbon\Carbon::create($request->period_year, $request->period_month, 1)->format('F Y'),
+                'received_amount' => $receivedAmount,
+                'installments' => $installments->map(function($inst) {
+                    return [
+                        'id' => $inst->id,
+                        'loan_number' => $inst->loan->loan_number,
+                        'installment_number' => $inst->installment_number,
+                        'amount' => $inst->total_amount,
+                        'due_date' => $inst->due_date->format('Y-m-d'),
+                    ];
+                }),
+                'calculation' => [
+                    'total_installments_due' => $totalDue,
+                    'will_be_paid_from_allowance' => $paidAmount,
+                    'remaining_for_member' => $remaining,
+                    'member_must_pay' => $memberMustPay,
+                    'scenario' => $scenario,
+                    'message' => $memberMustPay > 0
+                        ? "Jasa pelayanan kurang. Member harus bayar sisa: Rp " . number_format($memberMustPay, 0, ',', '.')
+                        : ($remaining > 0
+                            ? "Jasa pelayanan cukup. Sisa untuk member: Rp " . number_format($remaining, 0, ',', '.')
+                            : "Jasa pelayanan pas untuk bayar cicilan."
+                        ),
                 ],
-                'Service allowance calculated successfully'
-            );
+            ], 'Preview calculation retrieved successfully');
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return $this->errorResponse('User not found', 404);
         } catch (\Exception $e) {
             return $this->errorResponse(
-                'Failed to calculate service allowance: ' . $e->getMessage(),
+                'Failed to calculate preview: ' . $e->getMessage(),
                 500
             );
         }
     }
 
     /**
-     * Get service allowance summary for a period.
-     *
-     * @param Request $request
-     * @return JsonResponse
+     * Get service allowance summary for a period
      */
     public function periodSummary(Request $request): JsonResponse
     {
@@ -297,14 +283,11 @@ class ServiceAllowanceController extends Controller
             $summary = [
                 'period' => \Carbon\Carbon::create($year, $month, 1)->format('F Y'),
                 'total_members' => $allowances->count(),
-                'total_amount' => $allowances->sum('total_amount'),
-                'total_base' => $allowances->sum('base_amount'),
-                'total_savings_bonus' => $allowances->sum('savings_bonus'),
-                'total_loan_bonus' => $allowances->sum('loan_bonus'),
-                'paid_count' => $allowances->where('status', 'paid')->count(),
+                'total_received' => $allowances->sum('received_amount'),
+                'total_paid_for_installments' => $allowances->sum('installment_paid'),
+                'total_remaining_for_members' => $allowances->sum('remaining_amount'),
+                'processed_count' => $allowances->where('status', 'processed')->count(),
                 'pending_count' => $allowances->where('status', 'pending')->count(),
-                'paid_amount' => $allowances->where('status', 'paid')->sum('total_amount'),
-                'pending_amount' => $allowances->where('status', 'pending')->sum('total_amount'),
             ];
 
             return $this->successResponse(
@@ -321,18 +304,14 @@ class ServiceAllowanceController extends Controller
     }
 
     /**
-     * Get member's service allowance history.
-     *
-     * @param Request $request
-     * @param int $userId
-     * @return JsonResponse
+     * Get member's service allowance history
      */
     public function memberHistory(Request $request, int $userId): JsonResponse
     {
         try {
             $user = auth()->user();
 
-            // Access Control: Members can only see their own history
+            // Access Control
             if ($user->isMember() && $user->id != $userId) {
                 return $this->errorResponse('Access denied', 403);
             }
@@ -350,14 +329,14 @@ class ServiceAllowanceController extends Controller
                 'user' => $member->only(['id', 'full_name', 'employee_id']),
                 'year' => $year,
                 'total_received' => ServiceAllowance::getMemberTotalForYear($userId, $year),
+                'total_remaining' => ServiceAllowance::getMemberTotalRemainingForYear($userId, $year),
                 'allowances' => $allowances->map(function($allowance) {
                     return [
                         'id' => $allowance->id,
                         'period' => $allowance->period_display,
-                        'base_amount' => $allowance->base_amount,
-                        'savings_bonus' => $allowance->savings_bonus,
-                        'loan_bonus' => $allowance->loan_bonus,
-                        'total_amount' => $allowance->total_amount,
+                        'received_amount' => $allowance->received_amount,
+                        'installment_paid' => $allowance->installment_paid,
+                        'remaining_amount' => $allowance->remaining_amount,
                         'status' => $allowance->status,
                         'status_name' => $allowance->status_name,
                         'payment_date' => $allowance->payment_date?->format('Y-m-d'),

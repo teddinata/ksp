@@ -68,50 +68,73 @@ Route::middleware(['jwt.auth'])->group(function () {
     
     // Cash Accounts - Main CRUD
     Route::prefix('cash-accounts')->group(function () {
-        // List & Summary (All authenticated users can view)
-        Route::get('/', [App\Http\Controllers\Api\CashAccountController::class, 'index']);
-        Route::get('/summary', [App\Http\Controllers\Api\CashAccountController::class, 'getSummary']);
-        Route::get('/{id}', [App\Http\Controllers\Api\CashAccountController::class, 'show']);
         
+        // ==================== READ OPERATIONS ====================
+        // List & Summary (Admin & Manager with access control)
+        Route::get('/', [App\Http\Controllers\Api\CashAccountController::class, 'index'])
+            ->middleware('role:admin,manager');  // ✅ ADD THIS
+        
+        Route::get('/summary', [App\Http\Controllers\Api\CashAccountController::class, 'getSummary'])
+            ->middleware('role:admin,manager');  // ✅ ADD THIS
+        
+        Route::get('/{id}', [App\Http\Controllers\Api\CashAccountController::class, 'show'])
+            ->middleware('role:admin,manager');  // ✅ ADD THIS
+        
+        // ==================== WRITE OPERATIONS ====================
         // Create, Update, Delete (Admin & Manager only)
         Route::post('/', [App\Http\Controllers\Api\CashAccountController::class, 'store'])
-            ->middleware('role:admin,manager');
-        Route::put('/{id}', [App\Http\Controllers\Api\CashAccountController::class, 'update'])
-            ->middleware('role:admin');
-        Route::delete('/{id}', [App\Http\Controllers\Api\CashAccountController::class, 'destroy'])
-            ->middleware('role:admin');
+            ->middleware('role:admin,manager');  // ✅ Already correct
         
+        Route::put('/{id}', [App\Http\Controllers\Api\CashAccountController::class, 'update'])
+            ->middleware('role:admin');  // ✅ Already correct
+        
+        Route::delete('/{id}', [App\Http\Controllers\Api\CashAccountController::class, 'destroy'])
+            ->middleware('role:admin');  // ✅ Already correct
+        
+        // ==================== MANAGER ASSIGNMENT ====================
         // Manager Assignment (Admin only)
         Route::prefix('{cashAccountId}/managers')->group(function () {
             Route::get('/', [App\Http\Controllers\Api\CashAccountManagerController::class, 'index'])
-                ->middleware('role:admin,manager');
+                ->middleware('role:admin,manager');  // ✅ Already correct
+            
             Route::post('/', [App\Http\Controllers\Api\CashAccountManagerController::class, 'store'])
-                ->middleware('role:admin');
+                ->middleware('role:admin');  // ✅ Already correct
+            
             Route::delete('/{managerId}', [App\Http\Controllers\Api\CashAccountManagerController::class, 'destroy'])
-                ->middleware('role:admin');
+                ->middleware('role:admin');  // ✅ Already correct
         });
         
+        // ✅ OPTIONAL: Get available managers (for dropdown in UI)
+        Route::get('/managers/available', [App\Http\Controllers\Api\CashAccountManagerController::class, 'getAvailableManagers'])
+            ->middleware('role:admin');
+        
+        // ==================== INTEREST RATES ====================
         // Interest Rates (Admin & assigned Manager)
         Route::prefix('{cashAccountId}/interest-rates')->group(function () {
-            Route::get('/', [App\Http\Controllers\Api\InterestRateController::class, 'index']);
+            Route::get('/', [App\Http\Controllers\Api\InterestRateController::class, 'index'])
+                ->middleware('role:admin,manager');  // ✅ ADD THIS
+            
             Route::post('/', [App\Http\Controllers\Api\InterestRateController::class, 'store'])
-                ->middleware('role:admin,manager');
+                ->middleware('role:admin,manager');  // ✅ Already correct
         });
     });
     
     // Interest Rates - Direct access
     Route::prefix('interest-rates')->group(function () {
-        Route::get('/current', [App\Http\Controllers\Api\InterestRateController::class, 'getCurrentRates']);
+        Route::get('/current', [App\Http\Controllers\Api\InterestRateController::class, 'getCurrentRates'])
+            ->middleware('role:admin,manager');  // ✅ ADD THIS
+        
         Route::put('/{id}', [App\Http\Controllers\Api\InterestRateController::class, 'update'])
-            ->middleware('role:admin,manager');
+            ->middleware('role:admin,manager');  // ✅ Already correct
+        
         Route::delete('/{id}', [App\Http\Controllers\Api\InterestRateController::class, 'destroy'])
-            ->middleware('role:admin');
+            ->middleware('role:admin');  // ✅ Already correct
     });
     
     // Manager's Dashboard - Get accounts managed by a user
     Route::get('/managers/{managerId}/cash-accounts', 
         [App\Http\Controllers\Api\CashAccountManagerController::class, 'getManagedAccounts'])
-        ->middleware('role:admin,manager');
+        ->middleware('role:admin,manager');  // ✅ Already correct
 });
 
 /*
@@ -271,17 +294,32 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
     
     // Service Allowances
     Route::prefix('service-allowances')->group(function () {
-        // Read operations (All authenticated users with access control)
+        
+        // ==================== READ OPERATIONS ====================
+        // All authenticated users (with access control inside controller)
         Route::get('/', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'index']);
         Route::get('/period-summary', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'periodSummary']);
         Route::get('/member/{userId}/history', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'memberHistory']);
         Route::get('/{id}', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'show']);
         
-        // Distribution & Payment (Admin & Manager only)
-        Route::post('/distribute', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'distribute'])
+        // ==================== WRITE OPERATIONS ====================
+        // Admin & Manager only
+        
+        // ✅ NEW: Input manual jasa pelayanan per member
+        Route::post('/', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'store'])
             ->middleware('role:admin,manager');
-        Route::post('/calculate', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'calculate'])
+        
+        // ✅ NEW: Preview calculation before processing
+        Route::post('/preview', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'preview'])
             ->middleware('role:admin,manager');
+        
+        // ❌ DEPRECATED: Remove distribute (tidak dipakai lagi)
+        // Route::post('/distribute', ...) 
+        
+        // ❌ DEPRECATED: Remove calculate (ganti dengan preview)
+        // Route::post('/calculate', ...)
+        
+        // Mark as paid (if needed manual payment)
         Route::post('/{id}/mark-as-paid', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'markAsPaid'])
             ->middleware('role:admin,manager');
     });

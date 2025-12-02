@@ -4,32 +4,25 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
 class ServiceAllowance extends Model
 {
     use HasFactory;
 
-    /**
-     * The table associated with the model.
-     *
-     * @var string
-     */
     protected $table = 'service_allowances';
 
     /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
+     * ✅ UPDATED: New fillable attributes
      */
     protected $fillable = [
         'user_id',
         'period_month',
         'period_year',
-        'base_amount',
-        'savings_bonus',
-        'loan_bonus',
-        'total_amount',
+        'received_amount',      // ✅ NEW: Dari RS
+        'installment_paid',     // ✅ NEW: Dipotong untuk cicilan
+        'remaining_amount',     // ✅ NEW: Sisa untuk member
         'status',
         'payment_date',
         'notes',
@@ -37,151 +30,129 @@ class ServiceAllowance extends Model
     ];
 
     /**
-     * The attributes that should be cast.
-     *
-     * @return array<string, string>
+     * ✅ UPDATED: New casts
      */
     protected function casts(): array
     {
         return [
             'period_month' => 'integer',
             'period_year' => 'integer',
-            'base_amount' => 'decimal:2',
-            'savings_bonus' => 'decimal:2',
-            'loan_bonus' => 'decimal:2',
-            'total_amount' => 'decimal:2',
+            'received_amount' => 'decimal:2',      // ✅ NEW
+            'installment_paid' => 'decimal:2',     // ✅ NEW
+            'remaining_amount' => 'decimal:2',     // ✅ NEW
             'payment_date' => 'date',
         ];
     }
 
-    /**
-     * Get the user who owns the service allowance.
-     */
+    // ==================== RELATIONSHIPS ====================
+
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
     }
 
-    /**
-     * Get the distributor.
-     */
     public function distributedBy()
     {
         return $this->belongsTo(User::class, 'distributed_by');
     }
 
-    /**
-     * Scope query by status.
-     */
+    // ==================== SCOPES ====================
+
     public function scopeByStatus($query, string $status)
     {
         return $query->where('status', $status);
     }
 
-    /**
-     * Scope query for pending allowances.
-     */
     public function scopePending($query)
     {
         return $query->where('status', 'pending');
     }
 
-    /**
-     * Scope query for paid allowances.
-     */
+    public function scopeProcessed($query)
+    {
+        return $query->where('status', 'processed');
+    }
+
     public function scopePaid($query)
     {
         return $query->where('status', 'paid');
     }
 
-    /**
-     * Scope query by user.
-     */
     public function scopeByUser($query, int $userId)
     {
         return $query->where('user_id', $userId);
     }
 
-    /**
-     * Scope query by period.
-     */
     public function scopeByPeriod($query, int $month, int $year)
     {
         return $query->where('period_month', $month)
                      ->where('period_year', $year);
     }
 
-    /**
-     * Scope query by year.
-     */
     public function scopeByYear($query, int $year)
     {
         return $query->where('period_year', $year);
     }
 
+    // ==================== ACCESSORS ====================
+
     /**
-     * Get status display name.
+     * ✅ UPDATED: Status display names
      */
     public function getStatusNameAttribute(): string
     {
         return match($this->status) {
-            'pending' => 'Menunggu Pembayaran',
+            'pending' => 'Menunggu Input',
+            'processed' => 'Sudah Diproses',
             'paid' => 'Sudah Dibayar',
             'cancelled' => 'Dibatalkan',
             default => $this->status,
         };
     }
 
-    /**
-     * Get status color.
-     */
     public function getStatusColorAttribute(): string
     {
         return match($this->status) {
             'pending' => 'warning',
+            'processed' => 'info',
             'paid' => 'success',
             'cancelled' => 'danger',
             default => 'secondary',
         };
     }
 
-    /**
-     * Get period display.
-     */
     public function getPeriodDisplayAttribute(): string
     {
-        $monthName = Carbon::create($this->period_year, $this->period_month, 1)
+        return Carbon::create($this->period_year, $this->period_month, 1)
             ->format('F Y');
-        
-        return $monthName;
     }
 
-    /**
-     * Get period short display.
-     */
     public function getPeriodShortAttribute(): string
     {
         return str_pad($this->period_month, 2, '0', STR_PAD_LEFT) . '/' . $this->period_year;
     }
 
-    /**
-     * Check if allowance is pending.
-     */
+    // ==================== STATUS CHECKERS ====================
+
     public function isPending(): bool
     {
         return $this->status === 'pending';
     }
 
-    /**
-     * Check if allowance is paid.
-     */
+    public function isProcessed(): bool
+    {
+        return $this->status === 'processed';
+    }
+
     public function isPaid(): bool
     {
         return $this->status === 'paid';
     }
 
+    // ==================== METHODS ====================
+
     /**
-     * Mark as paid.
+     * Mark as paid (if not auto-processed)
      */
     public function markAsPaid(int $distributedBy, ?string $notes = null): void
     {
@@ -194,162 +165,226 @@ class ServiceAllowance extends Model
     }
 
     /**
-     * Calculate service allowance for a member.
+     * ✅ NEW: Process service allowance with auto-installment payment
      * 
      * Business Logic:
-     * - Base amount: Fixed amount per member (e.g., Rp 50,000)
-     * - Savings bonus: Percentage of total savings (e.g., 1% of savings)
-     * - Loan bonus: Percentage of loan interest paid (e.g., 10% of interest)
-     *
-     * @param User $user
+     * 1. Terima nominal dari RS (manual input)
+     * 2. Cek cicilan bulan ini
+     * 3. Auto-potong cicilan
+     * 4. Hitung sisa
+     * 
+     * @param User $member
      * @param int $month
      * @param int $year
-     * @param float $baseAmount Default base amount
-     * @param float $savingsRate Percentage of savings
-     * @param float $loanRate Percentage of loan interest
+     * @param float $receivedAmount
+     * @param int $processedBy
+     * @param string|null $notes
      * @return array
      */
-    public static function calculateForMember(
-        User $user,
+    public static function processForMember(
+        User $member,
         int $month,
         int $year,
-        float $baseAmount = 50000,
-        float $savingsRate = 1.0,
-        float $loanRate = 10.0
+        float $receivedAmount,
+        int $processedBy,
+        ?string $notes = null
     ): array {
-        // Base amount - fixed for all members
-        $base = $baseAmount;
-
-        // Savings bonus - percentage of total savings
-        $totalSavings = $user->total_savings;
-        $savingsBonus = $totalSavings * ($savingsRate / 100);
-
-        // Loan bonus - percentage of interest paid in the period
-        $startDate = Carbon::create($year, $month, 1)->startOfMonth();
-        $endDate = Carbon::create($year, $month, 1)->endOfMonth();
-
-        $loanInterestPaid = Installment::whereHas('loan', function($q) use ($user) {
-            $q->where('user_id', $user->id);
-        })
-        ->whereIn('status', ['auto_paid', 'paid'])
-        ->whereBetween('payment_date', [$startDate, $endDate])
-        ->sum('interest_amount');
-
-        $loanBonus = $loanInterestPaid * ($loanRate / 100);
-
-        // Total
-        $total = $base + $savingsBonus + $loanBonus;
-
-        return [
-            'base_amount' => round($base, 2),
-            'savings_bonus' => round($savingsBonus, 2),
-            'loan_bonus' => round($loanBonus, 2),
-            'total_amount' => round($total, 2),
-            'calculation_details' => [
-                'total_savings' => $totalSavings,
-                'savings_rate' => $savingsRate . '%',
-                'loan_interest_paid' => $loanInterestPaid,
-                'loan_rate' => $loanRate . '%',
-            ],
-        ];
-    }
-
-    /**
-     * Distribute service allowances to all active members.
-     *
-     * @param int $month
-     * @param int $year
-     * @param int $distributedBy
-     * @param array $options
-     * @return array
-     */
-    public static function distributeToMembers(
-        int $month,
-        int $year,
-        int $distributedBy,
-        array $options = []
-    ): array {
-        $baseAmount = $options['base_amount'] ?? 50000;
-        $savingsRate = $options['savings_rate'] ?? 1.0;
-        $loanRate = $options['loan_rate'] ?? 10.0;
-
-        // Check if already distributed
-        $existing = self::where('period_month', $month)
-            ->where('period_year', $year)
-            ->count();
-
-        if ($existing > 0) {
-            throw new \Exception('Service allowance for this period has already been distributed');
-        }
-
-        // Get all active members
-        $members = User::members()->active()->get();
-        $distributed = [];
-        $totalAmount = 0;
-
-        foreach ($members as $member) {
-            $calculation = self::calculateForMember(
-                $member,
-                $month,
-                $year,
-                $baseAmount,
-                $savingsRate,
-                $loanRate
-            );
-
-            $allowance = self::create([
+        DB::beginTransaction();
+        
+        try {
+            // Check if already exists
+            $existing = self::where('user_id', $member->id)
+                ->byPeriod($month, $year)
+                ->first();
+                
+            if ($existing) {
+                throw new \Exception('Jasa pelayanan untuk member ini di periode ini sudah ada');
+            }
+            
+            // Get installments for this period
+            $startDate = Carbon::create($year, $month, 1)->startOfMonth();
+            $endDate = Carbon::create($year, $month, 1)->endOfMonth();
+            
+            $currentMonthInstallments = Installment::whereHas('loan', function($q) use ($member) {
+                $q->where('user_id', $member->id)
+                  ->whereIn('status', ['disbursed', 'active']);
+            })
+            ->where('status', 'pending')
+            ->whereBetween('due_date', [$startDate, $endDate])
+            ->orderBy('due_date')
+            ->get();
+            
+            $totalInstallmentDue = $currentMonthInstallments->sum('total_amount');
+            
+            // Calculate payment distribution
+            $paidAmount = 0;
+            $remainingAllowance = $receivedAmount;
+            $remainingInstallment = 0;
+            
+            if ($totalInstallmentDue > 0) {
+                if ($receivedAmount >= $totalInstallmentDue) {
+                    // Jasa pelayanan CUKUP
+                    $paidAmount = $totalInstallmentDue;
+                    $remainingAllowance = $receivedAmount - $totalInstallmentDue;
+                    
+                    // Auto pay all installments
+                    foreach ($currentMonthInstallments as $installment) {
+                        $installment->update([
+                            'status' => 'auto_paid',
+                            'payment_date' => now(),
+                            'payment_method' => 'service_allowance',
+                            'notes' => 'Dibayar otomatis dari jasa pelayanan periode ' . 
+                                       Carbon::create($year, $month, 1)->format('F Y'),
+                        ]);
+                        
+                        // Update loan remaining principal
+                        $installment->loan->remaining_principal -= $installment->principal_amount;
+                        $installment->loan->save();
+                        
+                        // Check if loan is paid off
+                        if ($installment->loan->remaining_principal <= 0) {
+                            $installment->loan->status = 'paid_off';
+                            $installment->loan->save();
+                        }
+                    }
+                    
+                } else {
+                    // Jasa pelayanan TIDAK CUKUP
+                    $paidAmount = $receivedAmount;
+                    $remainingInstallment = $totalInstallmentDue - $receivedAmount;
+                    $remainingAllowance = 0;
+                    
+                    // Pay partial installments
+                    $remainingToPay = $receivedAmount;
+                    
+                    foreach ($currentMonthInstallments as $installment) {
+                        if ($remainingToPay <= 0) break;
+                        
+                        if ($remainingToPay >= $installment->total_amount) {
+                            // Pay full
+                            $installment->update([
+                                'status' => 'auto_paid',
+                                'payment_date' => now(),
+                                'payment_method' => 'service_allowance',
+                                'notes' => 'Dibayar otomatis dari jasa pelayanan',
+                            ]);
+                            
+                            $remainingToPay -= $installment->total_amount;
+                            
+                            // Update loan
+                            $installment->loan->remaining_principal -= $installment->principal_amount;
+                            $installment->loan->save();
+                            
+                        } else {
+                            // Partial payment (sisanya member bayar manual)
+                            $installment->update([
+                                'paid_amount' => $remainingToPay,
+                                'status' => 'partial',
+                                'payment_date' => now(),
+                                'payment_method' => 'service_allowance',
+                                'notes' => "Dibayar sebagian Rp " . number_format($remainingToPay, 0, ',', '.') . 
+                                          " dari jasa pelayanan. Sisa: Rp " . 
+                                          number_format($installment->total_amount - $remainingToPay, 0, ',', '.'),
+                            ]);
+                            
+                            $remainingToPay = 0;
+                        }
+                    }
+                }
+            } else {
+                // No installments, all for member
+                $remainingAllowance = $receivedAmount;
+            }
+            
+            // Create service allowance record
+            $serviceAllowance = self::create([
                 'user_id' => $member->id,
                 'period_month' => $month,
                 'period_year' => $year,
-                'base_amount' => $calculation['base_amount'],
-                'savings_bonus' => $calculation['savings_bonus'],
-                'loan_bonus' => $calculation['loan_bonus'],
-                'total_amount' => $calculation['total_amount'],
-                'status' => 'pending',
-                'distributed_by' => $distributedBy,
+                'received_amount' => $receivedAmount,
+                'installment_paid' => $paidAmount,
+                'remaining_amount' => $remainingAllowance,
+                'status' => 'processed',
+                'payment_date' => now(),
+                'distributed_by' => $processedBy,
+                'notes' => $notes,
             ]);
-
-            $distributed[] = $allowance;
-            $totalAmount += $calculation['total_amount'];
+            
+            DB::commit();
+            
+            return [
+                'service_allowance' => $serviceAllowance,
+                'summary' => [
+                    'received_from_hospital' => $receivedAmount,
+                    'used_for_installments' => $paidAmount,
+                    'returned_to_member' => $remainingAllowance,
+                    'remaining_installment_due' => $remainingInstallment,
+                    'installments_paid_count' => $currentMonthInstallments->where('status', 'auto_paid')->count(),
+                    'message' => self::generateSummaryMessage($remainingAllowance, $remainingInstallment),
+                ],
+            ];
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
         }
-
-        return [
-            'period' => Carbon::create($year, $month, 1)->format('F Y'),
-            'members_count' => count($distributed),
-            'total_amount' => $totalAmount,
-            'allowances' => $distributed,
-        ];
     }
 
     /**
-     * Get total distributed for a period.
+     * Generate summary message
+     */
+    private static function generateSummaryMessage(float $remaining, float $installmentDue): string
+    {
+        if ($installmentDue > 0) {
+            return "Member harus bayar sisa cicilan: Rp " . number_format($installmentDue, 0, ',', '.');
+        } elseif ($remaining > 0) {
+            return "Sisa jasa pelayanan untuk member: Rp " . number_format($remaining, 0, ',', '.');
+        } else {
+            return "Jasa pelayanan pas untuk bayar cicilan.";
+        }
+    }
+
+    // ==================== STATIC QUERIES ====================
+
+    /**
+     * Get total distributed for a period
      */
     public static function getTotalForPeriod(int $month, int $year): float
     {
         return self::where('period_month', $month)
             ->where('period_year', $year)
-            ->sum('total_amount');
+            ->sum('received_amount');
     }
 
     /**
-     * Get total paid for a period.
+     * Get total paid for installments in a period
      */
-    public static function getTotalPaidForPeriod(int $month, int $year): float
+    public static function getTotalPaidForInstallmentsInPeriod(int $month, int $year): float
     {
         return self::where('period_month', $month)
             ->where('period_year', $year)
-            ->where('status', 'paid')
-            ->sum('total_amount');
+            ->sum('installment_paid');
     }
 
     /**
-     * Get member's total service allowance for a year.
+     * Get member's total service allowance for a year
      */
     public static function getMemberTotalForYear(int $userId, int $year): float
     {
         return self::where('user_id', $userId)
             ->where('period_year', $year)
-            ->where('status', 'paid')
-            ->sum('total_amount');
+            ->whereIn('status', ['processed', 'paid'])
+            ->sum('received_amount');
+    }
+
+    /**
+     * Get member's total remaining (yang diterima member) for a year
+     */
+    public static function getMemberTotalRemainingForYear(int $userId, int $year): float
+    {
+        return self::where('user_id', $userId)
+            ->where('period_year', $year)
+            ->whereIn('status', ['processed', 'paid'])
+            ->sum('remaining_amount');
     }
 }

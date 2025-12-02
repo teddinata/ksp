@@ -5,6 +5,8 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use App\Models\User;
+use App\Models\ServiceAllowance;
 
 class ServiceAllowanceRequest extends FormRequest
 {
@@ -13,7 +15,9 @@ class ServiceAllowanceRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        // Only admin and manager can create service allowance
+        $user = auth()->user();
+        return $user && ($user->isAdmin() || $user->isManager());
     }
 
     /**
@@ -24,11 +28,18 @@ class ServiceAllowanceRequest extends FormRequest
     public function rules(): array
     {
         return [
+            // Member selection
+            'user_id' => 'required|exists:users,id',
+            
+            // Period
             'period_month' => 'required|integer|min:1|max:12',
             'period_year' => 'required|integer|min:2020|max:2100',
-            'base_amount' => 'required|numeric|min:0',
-            'savings_rate' => 'required|numeric|min:0|max:100',
-            'loan_rate' => 'required|numeric|min:0|max:100',
+            
+            // Amount (manual input dari RS)
+            'received_amount' => 'required|numeric|min:0',
+            
+            // Optional notes
+            'notes' => 'nullable|string|max:1000',
         ];
     }
 
@@ -40,16 +51,25 @@ class ServiceAllowanceRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'period_month.required' => 'Period month is required',
-            'period_month.min' => 'Period month must be between 1 and 12',
-            'period_month.max' => 'Period month must be between 1 and 12',
-            'period_year.required' => 'Period year is required',
-            'base_amount.required' => 'Base amount is required',
-            'base_amount.min' => 'Base amount must be at least 0',
-            'savings_rate.required' => 'Savings rate is required',
-            'savings_rate.max' => 'Savings rate cannot exceed 100%',
-            'loan_rate.required' => 'Loan rate is required',
-            'loan_rate.max' => 'Loan rate cannot exceed 100%',
+            // User
+            'user_id.required' => 'Member harus dipilih',
+            'user_id.exists' => 'Member tidak ditemukan',
+            
+            // Period
+            'period_month.required' => 'Bulan periode harus diisi',
+            'period_month.min' => 'Bulan periode harus antara 1-12',
+            'period_month.max' => 'Bulan periode harus antara 1-12',
+            'period_year.required' => 'Tahun periode harus diisi',
+            'period_year.min' => 'Tahun periode minimal 2020',
+            'period_year.max' => 'Tahun periode maksimal 2100',
+            
+            // Amount
+            'received_amount.required' => 'Nominal jasa pelayanan harus diisi',
+            'received_amount.numeric' => 'Nominal jasa pelayanan harus berupa angka',
+            'received_amount.min' => 'Nominal jasa pelayanan minimal 0',
+            
+            // Notes
+            'notes.max' => 'Catatan maksimal 1000 karakter',
         ];
     }
 
@@ -59,29 +79,69 @@ class ServiceAllowanceRequest extends FormRequest
     public function withValidator($validator)
     {
         $validator->after(function ($validator) {
-            // Check if period is not in the future
-            if ($this->period_year && $this->period_month) {
-                $periodDate = \Carbon\Carbon::create($this->period_year, $this->period_month, 1);
+            
+            // 1. Check if user is actually a member
+            if ($this->user_id) {
+                $user = User::find($this->user_id);
                 
-                if ($periodDate->isFuture()) {
+                if ($user && !$user->isMember()) {
                     $validator->errors()->add(
-                        'period_month',
-                        'Cannot distribute service allowance for future periods'
+                        'user_id',
+                        'User yang dipilih bukan anggota koperasi'
+                    );
+                }
+                
+                // Check if member is active
+                if ($user && $user->status !== 'active') {
+                    $validator->errors()->add(
+                        'user_id',
+                        'Member tidak aktif. Hanya member aktif yang bisa menerima jasa pelayanan'
                     );
                 }
             }
-
-            // Check if already distributed for this period
+            
+            // 2. Check if period is not too far in the future (max 1 month ahead)
             if ($this->period_year && $this->period_month) {
-                $existing = \App\Models\ServiceAllowance::where('period_month', $this->period_month)
-                    ->where('period_year', $this->period_year)
-                    ->count();
-
-                if ($existing > 0) {
+                $periodDate = \Carbon\Carbon::create($this->period_year, $this->period_month, 1);
+                $now = \Carbon\Carbon::now();
+                
+                if ($periodDate->diffInMonths($now, false) > 1) {
                     $validator->errors()->add(
                         'period_month',
-                        'Service allowance for this period has already been distributed'
+                        'Tidak dapat input jasa pelayanan untuk periode lebih dari 1 bulan ke depan'
                     );
+                }
+            }
+            
+            // 3. Check if already exists for this member and period
+            if ($this->user_id && $this->period_year && $this->period_month) {
+                $existing = ServiceAllowance::where('user_id', $this->user_id)
+                    ->where('period_month', $this->period_month)
+                    ->where('period_year', $this->period_year)
+                    ->first();
+
+                if ($existing) {
+                    $periodDisplay = \Carbon\Carbon::create($this->period_year, $this->period_month, 1)
+                        ->format('F Y');
+                    
+                    $validator->errors()->add(
+                        'user_id',
+                        "Member ini sudah menerima jasa pelayanan untuk periode {$periodDisplay}"
+                    );
+                }
+            }
+            
+            // 4. Validate amount is reasonable (optional warning, not blocking)
+            if ($this->received_amount) {
+                // Warning jika terlalu besar (> 10 juta)
+                if ($this->received_amount > 10000000) {
+                    // This is just a warning, not blocking
+                    // Could add to messages but not errors
+                    \Log::warning('Large service allowance amount', [
+                        'user_id' => $this->user_id,
+                        'amount' => $this->received_amount,
+                        'period' => $this->period_month . '/' . $this->period_year,
+                    ]);
                 }
             }
         });
@@ -95,9 +155,22 @@ class ServiceAllowanceRequest extends FormRequest
         throw new HttpResponseException(
             response()->json([
                 'success' => false,
-                'message' => 'Validation failed',
+                'message' => 'Validasi gagal',
                 'errors' => $validator->errors()
             ], 422)
+        );
+    }
+
+    /**
+     * Handle a failed authorization attempt.
+     */
+    protected function failedAuthorization()
+    {
+        throw new HttpResponseException(
+            response()->json([
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses untuk melakukan aksi ini. Hanya admin dan manager yang dapat menginput jasa pelayanan.',
+            ], 403)
         );
     }
 }
