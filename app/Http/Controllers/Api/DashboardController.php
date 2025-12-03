@@ -173,9 +173,9 @@ class DashboardController extends Controller
             'installments_collected' => Installment::whereIn('status', ['auto_paid', 'paid'])
                 ->whereYear('payment_date', $currentYear)
                 ->sum('total_amount'),
-            'service_allowances_distributed' => ServiceAllowance::where('status', 'paid')
+            'service_allowances_received' => ServiceAllowance::whereIn('status', ['processed', 'paid'])
                 ->where('period_year', $currentYear)
-                ->sum('total_amount'),
+                ->sum('received_amount'),  // ✅
             'gifts_distributed' => Gift::where('status', 'distributed')
                 ->whereYear('distribution_date', $currentYear)
                 ->sum('gift_value'),
