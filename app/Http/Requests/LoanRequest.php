@@ -103,19 +103,30 @@ class LoanRequest extends FormRequest
                 }
             }
             
-            // ==================== VALIDATION 3: Loan Limit Check (CRITICAL!) ====================
+            // ==================== VALIDATION 3: Loan Limit Check (FIXED!) ====================
             if ($this->user_id && $this->cash_account_id) {
                 $user = User::find($this->user_id);
                 $cashAccount = CashAccount::find($this->cash_account_id);
                 
                 if ($user && $cashAccount) {
-                    // Use trait method to check eligibility
-                    $check = $user->canApplyForLoan($this->cash_account_id);
+                    // ✅ FIXED: Check if user already has active loan in this cash account
+                    $existingLoan = Loan::where('user_id', $user->id)
+                        ->where('cash_account_id', $cashAccount->id)
+                        ->whereIn('status', ['pending', 'approved', 'active', 'disbursed'])
+                        ->first();
                     
-                    if (!$check['can_apply']) {
+                    if ($existingLoan) {
                         $validator->errors()->add(
                             'cash_account_id',
-                            $check['reason']
+                            "Anda sudah memiliki pinjaman aktif di {$cashAccount->name}. Maksimal 1 pinjaman aktif per kas."
+                        );
+                    }
+                    
+                    // ✅ Check if cash account has sufficient balance
+                    if ($this->principal_amount > $cashAccount->current_balance) {
+                        $validator->errors()->add(
+                            'principal_amount',
+                            "Saldo kas tidak mencukupi. Saldo tersedia: Rp " . number_format($cashAccount->current_balance, 0, ',', '.')
                         );
                     }
                 }
