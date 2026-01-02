@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\LoanRequest;
 use App\Http\Requests\ApproveLoanRequest;
 use App\Models\Loan;
+use App\Models\User;
 use App\Models\CashAccount;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
@@ -16,14 +17,83 @@ class LoanController extends Controller
     use ApiResponse;
 
     /**
-     * Display a listing of loans.
+     * ✅ NEW: Check if user can apply for loan (eligibility check)
      * 
      * Business Logic:
-     * - Admin/Manager: Can see all loans
-     * - Member: Can only see their own loans
-     *
+     * - Check loan limit (max 1 per cash account)
+     * - Check cash account type (only Kas I & III)
+     * - Return available cash accounts
+     * 
      * @param Request $request
      * @return JsonResponse
+     */
+    public function checkEligibility(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'user_id' => 'required|exists:users,id',
+                'cash_account_id' => 'nullable|exists:cash_accounts,id',
+            ]);
+            
+            $user = User::findOrFail($validated['user_id']);
+            
+            // Check if user is a member
+            if (!$user->isMember()) {
+                return $this->errorResponse('Hanya member yang dapat mengajukan pinjaman', 400);
+            }
+            
+            // Check if user is active
+            if ($user->status !== 'active') {
+                return $this->errorResponse('Member tidak aktif', 400);
+            }
+            
+            $response = [
+                'user' => $user->only(['id', 'full_name', 'employee_id', 'email']),
+                'loan_summary' => $user->getLoanSummary(),
+                'available_cash_accounts' => $user->getAvailableCashAccountsForLoan(),
+            ];
+            
+            // If specific cash account is provided, check it
+            if (isset($validated['cash_account_id'])) {
+                $cashAccountId = $validated['cash_account_id'];
+                $check = $user->canApplyForLoan($cashAccountId);
+                
+                $cashAccount = CashAccount::find($cashAccountId);
+                
+                $response['check_result'] = [
+                    'cash_account' => $cashAccount ? [
+                        'id' => $cashAccount->id,
+                        'code' => $cashAccount->code,
+                        'name' => $cashAccount->name,
+                        'type' => $cashAccount->type,
+                    ] : null,
+                    'can_apply' => $check['can_apply'],
+                    'reason' => $check['reason'],
+                ];
+            }
+            
+            return $this->successResponse(
+                $response,
+                'Eligibility checked successfully'
+            );
+            
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return $this->errorResponse('User tidak ditemukan', 404);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return $this->errorResponse(
+                'Validasi gagal: ' . $e->getMessage(),
+                422
+            );
+        } catch (\Exception $e) {
+            return $this->errorResponse(
+                'Gagal memeriksa kelayakan: ' . $e->getMessage(),
+                500
+            );
+        }
+    }
+
+    /**
+     * Display a listing of loans.
      */
     public function index(Request $request): JsonResponse
     {
@@ -93,15 +163,7 @@ class LoanController extends Controller
 
     /**
      * Store a newly created loan application.
-     * 
-     * Business Logic:
-     * - Generate unique loan number
-     * - Get interest rate from cash account
-     * - Calculate installment amount
-     * - Status = pending
-     *
-     * @param LoanRequest $request
-     * @return JsonResponse
+     * ✅ UPDATED: Now includes loan limit validation via LoanRequest
      */
     public function store(LoanRequest $request): JsonResponse
     {
@@ -109,7 +171,7 @@ class LoanController extends Controller
             // Get cash account and interest rate
             $cashAccount = CashAccount::findOrFail($request->cash_account_id);
             $interestRate = $cashAccount->currentLoanRate();
-            $interestPercentage = $interestRate ? $interestRate->rate_percentage : 12.0; // Default 12%
+            $interestPercentage = $interestRate ? $interestRate->rate_percentage : 12.0;
 
             // Calculate monthly installment
             $installmentAmount = Loan::calculateInstallment(
@@ -141,7 +203,7 @@ class LoanController extends Controller
 
             return $this->successResponse(
                 $loan,
-                'Loan application submitted successfully',
+                'Pengajuan pinjaman berhasil. Menunggu persetujuan admin.',
                 201
             );
 
@@ -157,9 +219,6 @@ class LoanController extends Controller
 
     /**
      * Display the specified loan.
-     *
-     * @param int $id
-     * @return JsonResponse
      */
     public function show(int $id): JsonResponse
     {
@@ -206,13 +265,6 @@ class LoanController extends Controller
 
     /**
      * Update the specified loan.
-     * 
-     * Business Logic:
-     * - Only pending loans can be updated
-     *
-     * @param LoanRequest $request
-     * @param int $id
-     * @return JsonResponse
      */
     public function update(LoanRequest $request, int $id): JsonResponse
     {
@@ -270,12 +322,6 @@ class LoanController extends Controller
 
     /**
      * Remove the specified loan.
-     * 
-     * Business Logic:
-     * - Only pending loans can be deleted
-     *
-     * @param int $id
-     * @return JsonResponse
      */
     public function destroy(int $id): JsonResponse
     {
@@ -309,10 +355,6 @@ class LoanController extends Controller
 
     /**
      * Approve or reject a loan.
-     *
-     * @param ApproveLoanRequest $request
-     * @param int $id
-     * @return JsonResponse
      */
     public function approve(ApproveLoanRequest $request, int $id): JsonResponse
     {
@@ -383,9 +425,6 @@ class LoanController extends Controller
 
     /**
      * Get loan summary for a user.
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function getSummary(Request $request): JsonResponse
     {
@@ -400,7 +439,7 @@ class LoanController extends Controller
                 return $this->errorResponse('Access denied', 403);
             }
 
-            $targetUser = \App\Models\User::findOrFail($userId);
+            $targetUser = User::findOrFail($userId);
 
             $activeLoans = Loan::where('user_id', $userId)
                 ->whereIn('status', ['disbursed', 'active'])
@@ -437,15 +476,12 @@ class LoanController extends Controller
 
     /**
      * Get loan simulation/calculation.
-     *
-     * @param Request $request
-     * @return JsonResponse
      */
     public function simulate(Request $request): JsonResponse
     {
         try {
             $request->validate([
-                'principal_amount' => 'required|numeric|min:1000000',
+                'principal_amount' => 'required|numeric|min:100000',
                 'tenure_months' => 'required|integer|min:6|max:60',
                 'cash_account_id' => 'required|exists:cash_accounts,id',
             ]);

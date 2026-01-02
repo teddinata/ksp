@@ -72,7 +72,7 @@ Route::middleware(['jwt.auth'])->group(function () {
         // ==================== READ OPERATIONS ====================
         // List & Summary (Admin & Manager with access control)
         Route::get('/', [App\Http\Controllers\Api\CashAccountController::class, 'index'])
-            ->middleware('role:admin,manager');  // ✅ ADD THIS
+            ->middleware('role:admin,manager,anggota');  // ✅ ADD THIS
         
         Route::get('/summary', [App\Http\Controllers\Api\CashAccountController::class, 'getSummary'])
             ->middleware('role:admin,manager');  // ✅ ADD THIS
@@ -199,24 +199,33 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| Loans Routes
+| Loans Routes (UPDATED with Loan Limit Validation)
 |--------------------------------------------------------------------------
 */
 Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
     
     // Loans
     Route::prefix('loans')->group(function () {
+        
+        // ✅ NEW: Check eligibility before applying (Member, Manager, Admin)
+        Route::post('/check-eligibility', [App\Http\Controllers\Api\LoanController::class, 'checkEligibility']);
+        
+        // Loan simulation (All authenticated users)
+        Route::post('/simulate', [App\Http\Controllers\Api\LoanController::class, 'simulate']);
+        
         // Read operations (All authenticated users with access control)
         Route::get('/', [App\Http\Controllers\Api\LoanController::class, 'index']);
         Route::get('/summary', [App\Http\Controllers\Api\LoanController::class, 'getSummary']);
-        Route::post('/simulate', [App\Http\Controllers\Api\LoanController::class, 'simulate']);
         Route::get('/{id}', [App\Http\Controllers\Api\LoanController::class, 'show']);
         
-        // Write operations (Admin & Manager only)
+        // Write operations
+        // ✅ UPDATED: Now with loan limit validation in LoanRequest
         Route::post('/', [App\Http\Controllers\Api\LoanController::class, 'store'])
             ->middleware('role:admin,manager,anggota');
+        
         Route::put('/{id}', [App\Http\Controllers\Api\LoanController::class, 'update'])
             ->middleware('role:admin,manager');
+        
         Route::delete('/{id}', [App\Http\Controllers\Api\LoanController::class, 'destroy'])
             ->middleware('role:admin,manager');
         
@@ -229,7 +238,7 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
         Route::get('/{loanId}/schedule', [App\Http\Controllers\Api\InstallmentController::class, 'schedule']);
     });
     
-    // Installments
+    // Installments (No changes)
     Route::prefix('installments')->group(function () {
         Route::get('/upcoming', [App\Http\Controllers\Api\InstallmentController::class, 'upcoming']);
         Route::get('/overdue', [App\Http\Controllers\Api\InstallmentController::class, 'overdue']);
