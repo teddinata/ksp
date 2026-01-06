@@ -505,13 +505,19 @@ class MemberController extends Controller
         }
     }
 
+    // =====================================================
+    // UPDATED: MemberController::store() method
+    // =====================================================
+
     /**
      * Store a new member.
      * 
+     * ✅ UPDATED: Now supports role selection (anggota, manager, admin)
+     * 
      * Business Logic:
-     * - Admin/Manager can create new members
-     * - Auto-generate employee_id if not provided
-     * - Default role: member
+     * - Admin can create users with any role
+     * - Manager can only create members (anggota)
+     * - Auto-generate employee_id based on role if not provided
      * - Default status: active
      * - Password is required and will be hashed
      *
@@ -526,7 +532,7 @@ class MemberController extends Controller
             // Access Control: Admin and Manager only
             if ($user->isMember()) {
                 return $this->errorResponse(
-                    'Only administrators and managers can create new members',
+                    'Only administrators and managers can create new users',
                     403
                 );
             }
@@ -543,20 +549,45 @@ class MemberController extends Controller
                 'position' => 'nullable|string|max:255',
                 'joined_at' => 'nullable|date',
                 'status' => 'sometimes|in:active,inactive',
+                'role' => 'sometimes|in:anggota,manager,admin',  // ✅ NEW: Role selection
             ]);
 
-            // Auto-generate employee_id if not provided
-            if (!isset($validated['employee_id'])) {
-                $validated['employee_id'] = 'EMP' . str_pad(
-                    User::members()->count() + 1, 
-                    6, 
-                    '0', 
-                    STR_PAD_LEFT
+            // ✅ Access Control: Only admin can create manager/admin
+            $requestedRole = $validated['role'] ?? 'anggota';
+            
+            if ($user->isManager() && $requestedRole !== 'anggota') {
+                return $this->errorResponse(
+                    'Managers can only create member (anggota) accounts',
+                    403
                 );
             }
 
-            // Create member
-            $member = User::create([
+            // ✅ Auto-generate employee_id based on role if not provided
+            if (!isset($validated['employee_id'])) {
+                $validated['employee_id'] = match($requestedRole) {
+                    'admin' => 'ADM' . str_pad(
+                        User::where('role', 'admin')->count() + 1, 
+                        4, 
+                        '0', 
+                        STR_PAD_LEFT
+                    ),
+                    'manager' => 'MGR' . str_pad(
+                        User::where('role', 'manager')->count() + 1, 
+                        4, 
+                        '0', 
+                        STR_PAD_LEFT
+                    ),
+                    default => 'EMP' . str_pad(
+                        User::members()->count() + 1, 
+                        6, 
+                        '0', 
+                        STR_PAD_LEFT
+                    ),
+                };
+            }
+
+            // Create user
+            $newUser = User::create([
                 'full_name' => $validated['full_name'],
                 'employee_id' => $validated['employee_id'],
                 'email' => $validated['email'] ?? null,
@@ -565,35 +596,48 @@ class MemberController extends Controller
                 'address' => $validated['address'] ?? null,
                 'work_unit' => $validated['work_unit'] ?? null,
                 'position' => $validated['position'] ?? null,
-                'role' => 'anggota',
+                'role' => $requestedRole,  // ✅ Use selected role
                 'status' => $validated['status'] ?? 'active',
                 'joined_at' => $validated['joined_at'] ?? now()->toDateString(),
             ]);
 
+            // ✅ Log creation based on role
+            \Log::info('New user created', [
+                'created_by' => $user->id,
+                'new_user_id' => $newUser->id,
+                'role' => $requestedRole,
+            ]);
+
             // Add computed attributes
-            $memberData = [
-                'id' => $member->id,
-                'employee_id' => $member->employee_id,
-                'full_name' => $member->full_name,
-                'email' => $member->email,
-                'phone_number' => $member->phone_number,
-                'formatted_phone' => $member->formatted_phone,
-                'address' => $member->address,
-                'work_unit' => $member->work_unit,
-                'position' => $member->position,
-                'role' => $member->role,
-                'status' => $member->status,
-                'joined_at' => $member->joined_at?->format('Y-m-d'),
-                'membership_duration' => $member->membership_duration,
-                'membership_status' => $member->membership_status,
-                'initials' => $member->initials,
-                'created_at' => $member->created_at,
-                'updated_at' => $member->updated_at,
+            $userData = [
+                'id' => $newUser->id,
+                'employee_id' => $newUser->employee_id,
+                'full_name' => $newUser->full_name,
+                'email' => $newUser->email,
+                'phone_number' => $newUser->phone_number,
+                'formatted_phone' => $newUser->formatted_phone,
+                'address' => $newUser->address,
+                'work_unit' => $newUser->work_unit,
+                'position' => $newUser->position,
+                'role' => $newUser->role,  // ✅ Show role
+                'status' => $newUser->status,
+                'joined_at' => $newUser->joined_at?->format('Y-m-d'),
+                'membership_duration' => $newUser->membership_duration,
+                'membership_status' => $newUser->membership_status,
+                'initials' => $newUser->initials,
+                'created_at' => $newUser->created_at,
+                'updated_at' => $newUser->updated_at,
             ];
 
+            $message = match($requestedRole) {
+                'admin' => 'Admin user created successfully',
+                'manager' => 'Manager user created successfully',
+                default => 'Member created successfully',
+            };
+
             return $this->successResponse(
-                $memberData,
-                'Member created successfully',
+                $userData,
+                $message,
                 201
             );
 
@@ -605,7 +649,7 @@ class MemberController extends Controller
             );
         } catch (\Exception $e) {
             return $this->errorResponse(
-                'Failed to create member: ' . $e->getMessage(),
+                'Failed to create user: ' . $e->getMessage(),
                 500
             );
         }
