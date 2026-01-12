@@ -342,4 +342,35 @@ class User extends Authenticatable implements JWTSubject
         
         return strtoupper(substr($this->full_name, 0, 2));
     }
+
+    /**
+     * Get cash accounts managed by this user (Manager only).
+     */
+    public function managedCashAccounts()
+    {
+        return $this->belongsToMany(
+            CashAccount::class,
+            'cash_account_managers',  // Pivot table
+            'manager_id',              // FK di pivot
+            'cash_account_id'          // Related key
+        )->withTimestamps();
+    }
+
+    /**
+     * Check if user is managing specific cash account.
+     */
+    public function isManagingCashAccount(int $cashAccountId): bool
+    {
+        return $this->managedCashAccounts()
+            ->where('cash_account_id', $cashAccountId)
+            ->exists();
+    }
+
+    /**
+     * Get count of managed accounts.
+     */
+    public function getManagedAccountsCountAttribute(): int
+    {
+        return $this->managedCashAccounts()->count();
+    }
 }
