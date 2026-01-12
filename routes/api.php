@@ -374,6 +374,10 @@ Route::middleware(['jwt.auth'])->group(function () {
         // Admin Dashboard (Admin & Manager only)
         Route::get('/admin', [App\Http\Controllers\Api\DashboardController::class, 'adminDashboard'])
             ->middleware('role:admin,manager');
+
+         // ✅ NEW: Manager Dashboard (Manager only)
+        Route::get('/manager', [App\Http\Controllers\Api\DashboardController::class, 'managerDashboard'])
+            ->middleware('role:manager');
         
         // Member Dashboard (Members only)
         Route::get('/member', [App\Http\Controllers\Api\DashboardController::class, 'memberDashboard'])

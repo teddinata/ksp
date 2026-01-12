@@ -550,4 +550,423 @@ class DashboardController extends Controller
             );
         }
     }
+
+    // =====================================================
+    // ADD THIS METHOD TO DashboardController.php
+    // =====================================================
+
+    /**
+     * Get manager dashboard - shows cash accounts managed by this manager.
+     * 
+     * Business Logic:
+     * - Manager sees only cash accounts they manage
+     * - Shows savings, loans, and transactions for their cash accounts
+     * - Summary statistics for managed accounts
+     * 
+     * @return JsonResponse
+     */
+    public function managerDashboard(): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            // Access Control: Manager only
+            if (!$user->isManager()) {
+                return $this->errorResponse('Manager access only', 403);
+            }
+
+            // Get cash accounts managed by this manager
+            $managedAccounts = $user->managedCashAccounts()
+                ->with(['currentLoanRate', 'currentSavingsRate'])
+                ->get();
+
+            if ($managedAccounts->isEmpty()) {
+                return $this->successResponse([
+                    'message' => 'No cash accounts assigned to you yet',
+                    'managed_accounts' => [],
+                    'summary' => [
+                        'total_accounts' => 0,
+                        'total_balance' => 0,
+                        'total_savings' => 0,
+                        'total_loans_disbursed' => 0,
+                        'active_loans' => 0,
+                    ],
+                ], 'Manager dashboard retrieved successfully');
+            }
+
+            $cashAccountIds = $managedAccounts->pluck('id')->toArray();
+
+            // Build dashboard data
+            $dashboard = [
+                'manager_info' => [
+                    'full_name' => $user->full_name,
+                    'employee_id' => $user->employee_id,
+                    'email' => $user->email,
+                    'managed_accounts_count' => $managedAccounts->count(),
+                ],
+                'managed_accounts' => $this->getManagerAccountsSummary($managedAccounts),
+                'summary' => $this->getManagerSummary($cashAccountIds),
+                'recent_transactions' => $this->getManagerRecentTransactions($cashAccountIds),
+                'pending_approvals' => $this->getManagerPendingApprovals($cashAccountIds),
+                'alerts' => $this->getManagerAlerts($cashAccountIds),
+                'statistics' => $this->getManagerStatistics($cashAccountIds),
+            ];
+
+            return $this->successResponse(
+                $dashboard,
+                'Manager dashboard retrieved successfully'
+            );
+
+        } catch (\Exception $e) {
+            \Log::error('Manager Dashboard Error', [
+                'user_id' => $user->id ?? null,
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            
+            return $this->errorResponse(
+                'Failed to retrieve dashboard: ' . $e->getMessage(),
+                500
+            );
+        }
+    }
+
+    /**
+     * Get summary of managed accounts.
+     */
+    private function getManagerAccountsSummary($managedAccounts): array
+    {
+        return $managedAccounts->map(function($account) {
+            // Get counts for this account
+            $savingsCount = Saving::where('cash_account_id', $account->id)
+                ->where('status', 'approved')
+                ->count();
+            
+            $loansCount = Loan::where('cash_account_id', $account->id)
+                ->whereIn('status', ['disbursed', 'active'])
+                ->count();
+
+            return [
+                'id' => $account->id,
+                'code' => $account->code,
+                'name' => $account->name,
+                'description' => $account->description,
+                'type' => $account->type,
+                'current_balance' => (float) $account->current_balance,
+                'is_active' => (bool) $account->is_active,
+                'loan_rate' => $account->currentLoanRate 
+                    ? (float) $account->currentLoanRate->rate_percentage 
+                    : null,
+                'savings_rate' => $account->currentSavingsRate 
+                    ? (float) $account->currentSavingsRate->rate_percentage 
+                    : null,
+                'savings_count' => $savingsCount,
+                'active_loans_count' => $loansCount,
+            ];
+        })->toArray();
+    }
+
+    /**
+     * Get manager's overall summary.
+     */
+    private function getManagerSummary(array $cashAccountIds): array
+    {
+        if (empty($cashAccountIds)) {
+            return [
+                'total_accounts' => 0,
+                'total_balance' => 0,
+                'total_savings' => 0,
+                'total_loans_disbursed' => 0,
+                'active_loans' => 0,
+                'pending_savings' => 0,
+                'pending_loans' => 0,
+            ];
+        }
+
+        return [
+            'total_accounts' => count($cashAccountIds),
+            'total_balance' => (float) CashAccount::whereIn('id', $cashAccountIds)
+                ->sum('current_balance'),
+            'total_savings' => (float) Saving::whereIn('cash_account_id', $cashAccountIds)
+                ->where('status', 'approved')
+                ->sum('final_amount'),
+            'total_loans_disbursed' => (float) Loan::whereIn('cash_account_id', $cashAccountIds)
+                ->whereIn('status', ['disbursed', 'active', 'paid_off'])
+                ->sum('principal_amount'),
+            'active_loans' => Loan::whereIn('cash_account_id', $cashAccountIds)
+                ->whereIn('status', ['disbursed', 'active'])
+                ->count(),
+            'pending_savings' => Saving::whereIn('cash_account_id', $cashAccountIds)
+                ->where('status', 'pending')
+                ->count(),
+            'pending_loans' => Loan::whereIn('cash_account_id', $cashAccountIds)
+                ->where('status', 'pending')
+                ->count(),
+        ];
+    }
+
+    /**
+     * Get recent transactions for managed accounts.
+     */
+    private function getManagerRecentTransactions(array $cashAccountIds): array
+    {
+        if (empty($cashAccountIds)) {
+            return [];
+        }
+
+        // Get recent savings
+        $recentSavings = Saving::whereIn('cash_account_id', $cashAccountIds)
+            ->with(['user:id,full_name,employee_id', 'cashAccount:id,code,name'])
+            ->latest('transaction_date')
+            ->limit(10)
+            ->get()
+            ->map(function($saving) {
+                return [
+                    'type' => 'saving',
+                    'id' => $saving->id,
+                    'title' => 'Simpanan ' . $saving->type_name,
+                    'description' => ($saving->user ? $saving->user->full_name : 'Unknown') . 
+                        ' → ' . 
+                        ($saving->cashAccount ? $saving->cashAccount->name : 'Unknown'),
+                    'amount' => (float) $saving->final_amount,
+                    'date' => $saving->transaction_date->format('Y-m-d H:i:s'),
+                    'status' => $saving->status,
+                    'cash_account' => $saving->cashAccount ? [
+                        'id' => $saving->cashAccount->id,
+                        'code' => $saving->cashAccount->code,
+                        'name' => $saving->cashAccount->name,
+                    ] : null,
+                ];
+            });
+
+        // Get recent loans
+        $recentLoans = Loan::whereIn('cash_account_id', $cashAccountIds)
+            ->with(['user:id,full_name,employee_id', 'cashAccount:id,code,name'])
+            ->latest('application_date')
+            ->limit(10)
+            ->get()
+            ->map(function($loan) {
+                return [
+                    'type' => 'loan',
+                    'id' => $loan->id,
+                    'title' => 'Pinjaman ' . $loan->loan_number,
+                    'description' => ($loan->user ? $loan->user->full_name : 'Unknown') . 
+                        ' → ' . 
+                        ($loan->cashAccount ? $loan->cashAccount->name : 'Unknown'),
+                    'amount' => (float) $loan->principal_amount,
+                    'date' => $loan->application_date->format('Y-m-d H:i:s'),
+                    'status' => $loan->status,
+                    'cash_account' => $loan->cashAccount ? [
+                        'id' => $loan->cashAccount->id,
+                        'code' => $loan->cashAccount->code,
+                        'name' => $loan->cashAccount->name,
+                    ] : null,
+                ];
+            });
+
+        // Merge and sort by date
+        return $recentSavings->concat($recentLoans)
+            ->sortByDesc('date')
+            ->take(15)
+            ->values()
+            ->toArray();
+    }
+
+    /**
+     * Get pending items that need manager approval.
+     */
+    private function getManagerPendingApprovals(array $cashAccountIds): array
+    {
+        if (empty($cashAccountIds)) {
+            return [
+                'pending_savings' => [],
+                'pending_loans' => [],
+            ];
+        }
+
+        // Pending savings
+        $pendingSavings = Saving::whereIn('cash_account_id', $cashAccountIds)
+            ->where('status', 'pending')
+            ->with(['user:id,full_name,employee_id', 'cashAccount:id,code,name'])
+            ->latest('transaction_date')
+            ->limit(10)
+            ->get()
+            ->map(function($saving) {
+                return [
+                    'id' => $saving->id,
+                    'type' => $saving->type_name,
+                    'member_name' => $saving->user ? $saving->user->full_name : 'Unknown',
+                    'employee_id' => $saving->user ? $saving->user->employee_id : 'N/A',
+                    'amount' => (float) $saving->final_amount,
+                    'date' => $saving->transaction_date->format('Y-m-d'),
+                    'cash_account' => $saving->cashAccount ? $saving->cashAccount->name : 'Unknown',
+                ];
+            });
+
+        // Pending loans
+        $pendingLoans = Loan::whereIn('cash_account_id', $cashAccountIds)
+            ->where('status', 'pending')
+            ->with(['user:id,full_name,employee_id', 'cashAccount:id,code,name'])
+            ->latest('application_date')
+            ->limit(10)
+            ->get()
+            ->map(function($loan) {
+                return [
+                    'id' => $loan->id,
+                    'loan_number' => $loan->loan_number,
+                    'member_name' => $loan->user ? $loan->user->full_name : 'Unknown',
+                    'employee_id' => $loan->user ? $loan->user->employee_id : 'N/A',
+                    'amount' => (float) $loan->principal_amount,
+                    'tenure_months' => $loan->tenure_months,
+                    'date' => $loan->application_date->format('Y-m-d'),
+                    'cash_account' => $loan->cashAccount ? $loan->cashAccount->name : 'Unknown',
+                ];
+            });
+
+        return [
+            'pending_savings' => $pendingSavings->toArray(),
+            'pending_loans' => $pendingLoans->toArray(),
+        ];
+    }
+
+    /**
+     * Get alerts for manager.
+     */
+    private function getManagerAlerts(array $cashAccountIds): array
+    {
+        if (empty($cashAccountIds)) {
+            return [];
+        }
+
+        $alerts = [];
+
+        // Pending approvals alert
+        $pendingSavingsCount = Saving::whereIn('cash_account_id', $cashAccountIds)
+            ->where('status', 'pending')
+            ->count();
+        
+        $pendingLoansCount = Loan::whereIn('cash_account_id', $cashAccountIds)
+            ->where('status', 'pending')
+            ->count();
+
+        if ($pendingSavingsCount > 0) {
+            $alerts[] = [
+                'type' => 'info',
+                'title' => 'Simpanan Pending',
+                'message' => "{$pendingSavingsCount} transaksi simpanan menunggu persetujuan",
+                'action' => 'Review',
+                'link' => '/savings?status=pending',
+            ];
+        }
+
+        if ($pendingLoansCount > 0) {
+            $alerts[] = [
+                'type' => 'warning',
+                'title' => 'Pengajuan Pinjaman',
+                'message' => "{$pendingLoansCount} pengajuan pinjaman menunggu persetujuan",
+                'action' => 'Review',
+                'link' => '/loans?status=pending',
+            ];
+        }
+
+        // Overdue installments in managed accounts
+        $overdueCount = Installment::whereHas('loan', function($q) use ($cashAccountIds) {
+            $q->whereIn('cash_account_id', $cashAccountIds);
+        })
+        ->where('status', 'overdue')
+        ->count();
+
+        if ($overdueCount > 0) {
+            $alerts[] = [
+                'type' => 'danger',
+                'title' => 'Cicilan Terlambat',
+                'message' => "{$overdueCount} cicilan terlambat di kas yang Anda kelola",
+                'action' => 'Lihat',
+                'link' => '/installments/overdue',
+            ];
+        }
+
+        // Low balance warning
+        $lowBalanceAccounts = CashAccount::whereIn('id', $cashAccountIds)
+            ->where('current_balance', '<', 1000000) // Less than 1M
+            ->where('is_active', true)
+            ->get();
+
+        if ($lowBalanceAccounts->count() > 0) {
+            $accountNames = $lowBalanceAccounts->pluck('name')->join(', ');
+            $alerts[] = [
+                'type' => 'warning',
+                'title' => 'Saldo Kas Rendah',
+                'message' => "Saldo rendah pada: {$accountNames}",
+                'action' => 'Cek Saldo',
+                'link' => '/cash-accounts',
+            ];
+        }
+
+        return $alerts;
+    }
+
+    /**
+     * Get statistics for managed accounts.
+     */
+    private function getManagerStatistics(array $cashAccountIds): array
+    {
+        if (empty($cashAccountIds)) {
+            return [
+                'this_month' => [
+                    'savings_collected' => 0,
+                    'loans_disbursed' => 0,
+                    'installments_collected' => 0,
+                ],
+                'this_year' => [
+                    'savings_collected' => 0,
+                    'loans_disbursed' => 0,
+                    'installments_collected' => 0,
+                ],
+            ];
+        }
+
+        $currentYear = now()->year;
+        $currentMonth = now()->month;
+
+        return [
+            'this_month' => [
+                'savings_collected' => (float) Saving::whereIn('cash_account_id', $cashAccountIds)
+                    ->where('status', 'approved')
+                    ->whereYear('transaction_date', $currentYear)
+                    ->whereMonth('transaction_date', $currentMonth)
+                    ->sum('final_amount'),
+                'loans_disbursed' => (float) Loan::whereIn('cash_account_id', $cashAccountIds)
+                    ->whereIn('status', ['disbursed', 'active'])
+                    ->whereYear('disbursement_date', $currentYear)
+                    ->whereMonth('disbursement_date', $currentMonth)
+                    ->sum('principal_amount'),
+                'installments_collected' => (float) Installment::whereHas('loan', function($q) use ($cashAccountIds) {
+                    $q->whereIn('cash_account_id', $cashAccountIds);
+                })
+                ->whereIn('status', ['auto_paid', 'paid'])
+                ->whereYear('payment_date', $currentYear)
+                ->whereMonth('payment_date', $currentMonth)
+                ->sum('total_amount'),
+            ],
+            'this_year' => [
+                'savings_collected' => (float) Saving::whereIn('cash_account_id', $cashAccountIds)
+                    ->where('status', 'approved')
+                    ->whereYear('transaction_date', $currentYear)
+                    ->sum('final_amount'),
+                'loans_disbursed' => (float) Loan::whereIn('cash_account_id', $cashAccountIds)
+                    ->whereIn('status', ['disbursed', 'active', 'paid_off'])
+                    ->whereYear('disbursement_date', $currentYear)
+                    ->sum('principal_amount'),
+                'installments_collected' => (float) Installment::whereHas('loan', function($q) use ($cashAccountIds) {
+                    $q->whereIn('cash_account_id', $cashAccountIds);
+                })
+                ->whereIn('status', ['auto_paid', 'paid'])
+                ->whereYear('payment_date', $currentYear)
+                ->sum('total_amount'),
+            ],
+        ];
+    }
 }
