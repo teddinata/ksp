@@ -46,6 +46,8 @@ class CashAccount extends Model
         ];
     }
 
+    // ==================== RELATIONSHIPS ====================
+
     /**
      * Get the managers assigned to this cash account.
      */
@@ -65,36 +67,71 @@ class CashAccount extends Model
     }
 
     /**
-     * Get interest rates for this cash account.
+     * Get all interest rates for this cash account.
+     * 
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
      */
     public function interestRates()
     {
-        return $this->hasMany(InterestRate::class, 'cash_account_id');
+        return $this->hasMany(InterestRate::class, 'cash_account_id')
+            ->orderBy('effective_date', 'desc');
     }
 
     /**
-     * Get current interest rate for savings.
-     */
-    public function currentSavingsRate()
-    {
-        return $this->interestRates()
-                    ->where('transaction_type', 'savings')
-                    ->where('effective_date', '<=', now())
-                    ->orderBy('effective_date', 'desc')
-                    ->first();
-    }
-
-    /**
-     * Get current interest rate for loans.
+     * Get current loan interest rate (most recent effective rate).
+     * ✅ FIXED: Changed from method to relationship (hasOne)
+     * 
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
      */
     public function currentLoanRate()
     {
-        return $this->interestRates()
-                    ->where('transaction_type', 'loans')
-                    ->where('effective_date', '<=', now())
-                    ->orderBy('effective_date', 'desc')
-                    ->first();
+        return $this->hasOne(InterestRate::class, 'cash_account_id')
+            ->where('transaction_type', 'loans')
+            ->where('effective_date', '<=', now())
+            ->orderBy('effective_date', 'desc')
+            ->latest('id'); // If same date, get latest by ID
     }
+
+    /**
+     * Get current savings interest rate (most recent effective rate).
+     * ✅ FIXED: Changed from method to relationship (hasOne)
+     * 
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne
+     */
+    public function currentSavingsRate()
+    {
+        return $this->hasOne(InterestRate::class, 'cash_account_id')
+            ->where('transaction_type', 'savings')
+            ->where('effective_date', '<=', now())
+            ->orderBy('effective_date', 'desc')
+            ->latest('id'); // If same date, get latest by ID
+    }
+
+    /**
+     * Get loan interest rates only.
+     * 
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function loanRates()
+    {
+        return $this->hasMany(InterestRate::class, 'cash_account_id')
+            ->where('transaction_type', 'loans')
+            ->orderBy('effective_date', 'desc');
+    }
+
+    /**
+     * Get savings interest rates only.
+     * 
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany
+     */
+    public function savingsRates()
+    {
+        return $this->hasMany(InterestRate::class, 'cash_account_id')
+            ->where('transaction_type', 'savings')
+            ->orderBy('effective_date', 'desc');
+    }
+
+    // ==================== SCOPES ====================
 
     /**
      * Scope query for active cash accounts only.
@@ -122,6 +159,8 @@ class CashAccount extends Model
               ->where('cash_account_managers.is_active', true);
         });
     }
+
+    // ==================== HELPER METHODS ====================
 
     /**
      * Check if user is manager of this cash account.
