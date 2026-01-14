@@ -331,6 +331,21 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
         // Mark as paid (if needed manual payment)
         Route::post('/{id}/mark-as-paid', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'markAsPaid'])
             ->middleware('role:admin,manager');
+
+        // ==================== IMPORT / EXPORT ====================
+        // Admin & Manager only
+        
+        // ✅ Download template Excel
+        Route::get('/export/template', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'downloadTemplate'])
+            ->middleware('role:admin,manager');
+        
+        // ✅ Import dari Excel
+        Route::post('/import/excel', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'importExcel'])
+            ->middleware('role:admin,manager');
+        
+        // ✅ Export ke Excel
+        Route::get('/export/excel', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'exportExcel'])
+            ->middleware('role:admin,manager');
     });
 });
 
