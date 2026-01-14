@@ -368,79 +368,228 @@ class ServiceAllowanceController extends Controller
     }
 
     /**
-     * Download template Excel untuk import jasa pelayanan
+     * ✅ IMPROVED: Download template Excel dengan guidelines lengkap
      * 
-     * Template contains:
-     * - Header dengan instruksi
-     * - Column headers
-     * - Sample data
-     * - List member aktif di sheet terpisah
+     * Replace method downloadTemplate() in ServiceAllowanceController
      */
     public function downloadTemplate(): \Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         try {
-            $spreadsheet = new Spreadsheet();
+            $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
             
             // ==================== SHEET 1: TEMPLATE ====================
             $sheet = $spreadsheet->getActiveSheet();
             $sheet->setTitle('Template Jasa Pelayanan');
             
-            // Header Info
+            // ==================== HEADER ====================
             $sheet->setCellValue('A1', 'TEMPLATE IMPORT JASA PELAYANAN');
             $sheet->mergeCells('A1:F1');
-            $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
-            $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
+            $sheet->getStyle('A1')->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle('A1')->getFill()
+                ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('4472C4');
+            $sheet->getStyle('A1')->getFont()->getColor()->setRGB('FFFFFF');
+            $sheet->getRowDimension('1')->setRowHeight(30);
             
-            // Instructions
-            $sheet->setCellValue('A2', 'INSTRUKSI:');
-            $sheet->setCellValue('A3', '1. Isi data mulai dari baris 8');
-            $sheet->setCellValue('A4', '2. ID Member: Lihat sheet "Daftar Member" untuk ID yang valid');
-            $sheet->setCellValue('A5', '3. Periode: Format MM/YYYY (contoh: 01/2026 untuk Januari 2026)');
-            $sheet->setCellValue('A6', '4. Nominal: Angka tanpa titik/koma (contoh: 500000 untuk Rp 500.000)');
+            // ==================== INSTRUCTIONS ====================
+            $sheet->setCellValue('A3', '📋 PETUNJUK PENGISIAN:');
+            $sheet->getStyle('A3')->getFont()->setBold(true)->setSize(12);
+            $sheet->getStyle('A3')->getFill()
+                ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('FFD966');
             
-            // Column Headers (Row 7)
-            $headers = ['ID Member', 'Nama Member', 'Periode (MM/YYYY)', 'Nominal Jasa Pelayanan', 'Catatan', 'Status'];
+            $instructions = [
+                ['No', 'Instruksi'],
+                ['1', 'Isi data mulai dari baris 14 (hapus contoh data terlebih dahulu)'],
+                ['2', 'ID Member: Lihat sheet "Daftar Member" untuk ID yang valid'],
+                ['3', 'Nama Member: Isi nama untuk referensi (tidak wajib, sistem akan ambil dari database)'],
+                ['4', 'Periode: PENTING! Format yang diterima:'],
+                ['', '   • Format standar: 01/2026 (bulan 2 digit/tahun 4 digit)'],
+                ['', '   • Format alternatif: 1/2026 (tanpa leading zero)'],
+                ['', '   • Format ISO: 2026-01'],
+                ['', '   ⚠️ TIPS: Jika Excel auto-convert jadi tanggal, itu tidak masalah!'],
+                ['5', 'Nominal: Angka tanpa format (contoh: 500000 untuk Rp 500.000)'],
+                ['', '   • Jangan pakai titik, koma, atau "Rp"'],
+                ['', '   • Hanya angka: 500000, 750000, 1000000'],
+                ['6', 'Catatan: Opsional, bisa dikosongkan'],
+            ];
+            
+            $row = 4;
+            foreach ($instructions as $instruction) {
+                $sheet->setCellValue('A' . $row, $instruction[0]);
+                $sheet->setCellValue('B' . $row, $instruction[1]);
+                
+                if ($instruction[0] === 'No') {
+                    $sheet->getStyle('A' . $row . ':B' . $row)->getFont()->setBold(true);
+                }
+                
+                $row++;
+            }
+            
+            // Border untuk instruksi
+            $sheet->getStyle('A4:B' . ($row - 1))->applyFromArray([
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                        'color' => ['rgb' => '000000'],
+                    ],
+                ],
+            ]);
+            
+            // ==================== FORMAT EXAMPLES ====================
+            $sheet->setCellValue('D3', '✅ CONTOH FORMAT PERIODE YANG BENAR:');
+            $sheet->getStyle('D3')->getFont()->setBold(true)->setSize(11);
+            $sheet->getStyle('D3')->getFill()
+                ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('C6E0B4');
+            $sheet->mergeCells('D3:F3');
+            
+            $periodExamples = [
+                ['Format', 'Contoh', 'Keterangan'],
+                ['MM/YYYY', '01/2026', 'Format standar (2 digit bulan)'],
+                ['M/YYYY', '1/2026', 'Tanpa leading zero (OK)'],
+                ['YYYY-MM', '2026-01', 'Format ISO (OK)'],
+                ['YYYY/MM', '2026/01', 'Alternatif (OK)'],
+                ['Excel Date', 'Jan 2026', 'Jika Excel convert (OK)'],
+            ];
+            
+            $row = 4;
+            foreach ($periodExamples as $example) {
+                $sheet->setCellValue('D' . $row, $example[0]);
+                $sheet->setCellValue('E' . $row, $example[1]);
+                $sheet->setCellValue('F' . $row, $example[2]);
+                
+                if ($example[0] === 'Format') {
+                    $sheet->getStyle('D' . $row . ':F' . $row)->getFont()->setBold(true);
+                }
+                
+                $row++;
+            }
+            
+            // Border untuk contoh
+            $sheet->getStyle('D4:F' . ($row - 1))->applyFromArray([
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                        'color' => ['rgb' => '000000'],
+                    ],
+                ],
+            ]);
+            
+            // ==================== WRONG EXAMPLES ====================
+            $wrongRow = $row + 1;
+            $sheet->setCellValue('D' . $wrongRow, '❌ CONTOH FORMAT YANG SALAH:');
+            $sheet->getStyle('D' . $wrongRow)->getFont()->setBold(true)->setSize(11);
+            $sheet->getStyle('D' . $wrongRow)->getFill()
+                ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('F4B084');
+            $sheet->mergeCells('D' . $wrongRow . ':F' . $wrongRow);
+            
+            $wrongExamples = [
+                ['Contoh Salah', 'Alasan'],
+                ['13/2026', 'Bulan tidak valid (harus 1-12)'],
+                ['01-2026', 'Separator salah (gunakan /)'],
+                ['2026', 'Hanya tahun, bulan hilang'],
+                ['Januari 2026', 'Teks Indonesia (gunakan angka)'],
+            ];
+            
+            $wrongRow++;
+            foreach ($wrongExamples as $wrong) {
+                $sheet->setCellValue('D' . $wrongRow, $wrong[0]);
+                $sheet->setCellValue('E' . $wrongRow, $wrong[1]);
+                
+                if ($wrong[0] === 'Contoh Salah') {
+                    $sheet->getStyle('D' . $wrongRow . ':E' . $wrongRow)->getFont()->setBold(true);
+                } else {
+                    $sheet->getStyle('D' . $wrongRow . ':E' . $wrongRow)
+                        ->getFont()->getColor()->setRGB('FF0000');
+                }
+                
+                $wrongRow++;
+            }
+            
+            $sheet->mergeCells('E' . ($wrongRow - count($wrongExamples) + 1) . ':F' . ($wrongRow - 1));
+            
+            // Border untuk wrong examples
+            $sheet->getStyle('D' . ($row + 1) . ':E' . ($wrongRow - 1))->applyFromArray([
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                        'color' => ['rgb' => '000000'],
+                    ],
+                ],
+            ]);
+            
+            // ==================== COLUMN HEADERS ====================
+            $headerRow = 12;
+            $sheet->setCellValue('A' . $headerRow, '📝 MULAI ISI DATA DI BAWAH INI:');
+            $sheet->mergeCells('A' . $headerRow . ':F' . $headerRow);
+            $sheet->getStyle('A' . $headerRow)->getFont()->setBold(true)->setSize(12);
+            $sheet->getStyle('A' . $headerRow)->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle('A' . $headerRow)->getFill()
+                ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('92D050');
+            
+            $headers = [
+                'ID Member',
+                'Nama Member',
+                'Periode (MM/YYYY)',
+                'Nominal Jasa Pelayanan',
+                'Catatan',
+                'Status'
+            ];
+            
+            $headerRow = 13;
             $column = 'A';
             foreach ($headers as $header) {
-                $sheet->setCellValue($column . '7', $header);
-                $sheet->getStyle($column . '7')->getFont()->setBold(true);
-                $sheet->getStyle($column . '7')->getFill()
-                    ->setFillType(Fill::FILL_SOLID)
+                $sheet->setCellValue($column . $headerRow, $header);
+                $sheet->getStyle($column . $headerRow)->getFont()->setBold(true);
+                $sheet->getStyle($column . $headerRow)->getFill()
+                    ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
                     ->getStartColor()->setRGB('4472C4');
-                $sheet->getStyle($column . '7')->getFont()->getColor()->setRGB('FFFFFF');
+                $sheet->getStyle($column . $headerRow)->getFont()->getColor()->setRGB('FFFFFF');
+                $sheet->getStyle($column . $headerRow)->getAlignment()
+                    ->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
                 $column++;
             }
             
-            // Sample Data (Row 8-10)
+            // ==================== SAMPLE DATA ====================
             $sampleData = [
                 [1, 'John Doe', '01/2026', 500000, 'Jasa pelayanan Januari 2026', ''],
-                [2, 'Jane Smith', '01/2026', 750000, '', ''],
-                [3, 'Bob Wilson', '01/2026', 600000, 'Termasuk bonus', ''],
+                [2, 'Jane Smith', '1/2026', 750000, 'Format tanpa leading zero juga OK', ''],
+                [3, 'Bob Wilson', '2026-01', 600000, 'Format ISO juga OK', ''],
             ];
             
-            $row = 8;
+            $row = 14;
             foreach ($sampleData as $data) {
                 $column = 'A';
                 foreach ($data as $value) {
                     $sheet->setCellValue($column . $row, $value);
                     $column++;
                 }
+                // Add note
+                $sheet->getStyle('A' . $row . ':F' . $row)
+                    ->getFill()
+                    ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                    ->getStartColor()->setRGB('E7E6E6');
                 $row++;
             }
             
+            // ==================== FORMATTING ====================
             // Set column widths
             $sheet->getColumnDimension('A')->setWidth(12);
             $sheet->getColumnDimension('B')->setWidth(25);
-            $sheet->getColumnDimension('C')->setWidth(18);
+            $sheet->getColumnDimension('C')->setWidth(20);
             $sheet->getColumnDimension('D')->setWidth(25);
-            $sheet->getColumnDimension('E')->setWidth(30);
+            $sheet->getColumnDimension('E')->setWidth(35);
             $sheet->getColumnDimension('F')->setWidth(15);
             
-            // Add borders to template area
-            $sheet->getStyle('A7:F10')->applyFromArray([
+            // Add borders to data area
+            $sheet->getStyle('A' . $headerRow . ':F' . ($row - 1))->applyFromArray([
                 'borders' => [
                     'allBorders' => [
-                        'borderStyle' => Border::BORDER_THIN,
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
                         'color' => ['rgb' => '000000'],
                     ],
                 ],
@@ -450,58 +599,150 @@ class ServiceAllowanceController extends Controller
             $memberSheet = $spreadsheet->createSheet();
             $memberSheet->setTitle('Daftar Member');
             
-            // Headers
-            $memberSheet->setCellValue('A1', 'ID');
-            $memberSheet->setCellValue('B1', 'NIP/Employee ID');
-            $memberSheet->setCellValue('C1', 'Nama Lengkap');
-            $memberSheet->setCellValue('D1', 'Status');
-            
-            $memberSheet->getStyle('A1:D1')->getFont()->setBold(true);
-            $memberSheet->getStyle('A1:D1')->getFill()
-                ->setFillType(Fill::FILL_SOLID)
+            // Header
+            $memberSheet->setCellValue('A1', 'DAFTAR MEMBER AKTIF');
+            $memberSheet->mergeCells('A1:D1');
+            $memberSheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+            $memberSheet->getStyle('A1')->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $memberSheet->getStyle('A1')->getFill()
+                ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
                 ->getStartColor()->setRGB('70AD47');
-            $memberSheet->getStyle('A1:D1')->getFont()->getColor()->setRGB('FFFFFF');
+            $memberSheet->getStyle('A1')->getFont()->getColor()->setRGB('FFFFFF');
+            
+            // Column headers
+            $memberHeaders = ['ID', 'NIP/Employee ID', 'Nama Lengkap', 'Status'];
+            $column = 'A';
+            foreach ($memberHeaders as $header) {
+                $memberSheet->setCellValue($column . '2', $header);
+                $memberSheet->getStyle($column . '2')->getFont()->setBold(true);
+                $memberSheet->getStyle($column . '2')->getFill()
+                    ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                    ->getStartColor()->setRGB('A9D08E');
+                $column++;
+            }
             
             // Get active members
-            $members = User::members()
+            $members = \App\Models\User::members()
                 ->where('status', 'active')
                 ->orderBy('employee_id')
                 ->get(['id', 'employee_id', 'full_name', 'status']);
             
-            $row = 2;
+            $row = 3;
             foreach ($members as $member) {
                 $memberSheet->setCellValue('A' . $row, $member->id);
                 $memberSheet->setCellValue('B' . $row, $member->employee_id);
                 $memberSheet->setCellValue('C' . $row, $member->full_name);
                 $memberSheet->setCellValue('D' . $row, $member->status);
+                
+                // Zebra striping
+                if ($row % 2 == 0) {
+                    $memberSheet->getStyle('A' . $row . ':D' . $row)
+                        ->getFill()
+                        ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                        ->getStartColor()->setRGB('F2F2F2');
+                }
+                
                 $row++;
             }
             
-            // Set column widths
+            // Borders
+            $memberSheet->getStyle('A2:D' . ($row - 1))->applyFromArray([
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                        'color' => ['rgb' => '000000'],
+                    ],
+                ],
+            ]);
+            
+            // Column widths
             $memberSheet->getColumnDimension('A')->setWidth(10);
             $memberSheet->getColumnDimension('B')->setWidth(20);
             $memberSheet->getColumnDimension('C')->setWidth(35);
             $memberSheet->getColumnDimension('D')->setWidth(15);
             
+            // ==================== SHEET 3: TIPS & TROUBLESHOOTING ====================
+            $tipsSheet = $spreadsheet->createSheet();
+            $tipsSheet->setTitle('Tips & Troubleshooting');
+            
+            $tipsSheet->setCellValue('A1', '💡 TIPS & TROUBLESHOOTING');
+            $tipsSheet->mergeCells('A1:B1');
+            $tipsSheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
+            $tipsSheet->getStyle('A1')->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $tipsSheet->getStyle('A1')->getFill()
+                ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('FFC000');
+            
+            $tips = [
+                ['Masalah', 'Solusi'],
+                ['Excel mengubah periode jadi tanggal', 'Tidak masalah! Sistem bisa membaca format Excel'],
+                ['Format periode ditolak', 'Coba format: 01/2026, 1/2026, atau 2026-01'],
+                ['ID Member tidak ditemukan', 'Cek sheet "Daftar Member" untuk ID yang benar'],
+                ['Nominal ditolak', 'Hapus semua format: titik, koma, Rp. Hanya angka!'],
+                ['Data sudah ada', 'Member ini sudah punya jasa pelayanan di periode tersebut'],
+                ['Member tidak aktif', 'Hanya member dengan status "active" yang bisa diimport'],
+                ['', ''],
+                ['📌 TIPS EXCEL:', ''],
+                ['Agar Excel tidak auto-format periode:', '1. Pilih kolom Periode'],
+                ['', '2. Klik kanan > Format Cells'],
+                ['', '3. Pilih "Text"'],
+                ['', '4. Ketik: 01/2026'],
+                ['', ''],
+                ['Atau prefix dengan apostrophe:', "Ketik: '01/2026"],
+            ];
+            
+            $row = 2;
+            foreach ($tips as $tip) {
+                $tipsSheet->setCellValue('A' . $row, $tip[0]);
+                $tipsSheet->setCellValue('B' . $row, $tip[1]);
+                
+                if ($tip[0] === 'Masalah') {
+                    $tipsSheet->getStyle('A' . $row . ':B' . $row)->getFont()->setBold(true);
+                }
+                
+                if (strpos($tip[0], '📌') !== false) {
+                    $tipsSheet->getStyle('A' . $row . ':B' . $row)->getFont()->setBold(true);
+                    $tipsSheet->getStyle('A' . $row . ':B' . $row)->getFill()
+                        ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                        ->getStartColor()->setRGB('FFE699');
+                }
+                
+                $row++;
+            }
+            
+            $tipsSheet->getStyle('A2:B' . ($row - 1))->applyFromArray([
+                'borders' => [
+                    'allBorders' => [
+                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                        'color' => ['rgb' => '000000'],
+                    ],
+                ],
+            ]);
+            
+            $tipsSheet->getColumnDimension('A')->setWidth(40);
+            $tipsSheet->getColumnDimension('B')->setWidth(50);
+            
             // Set active sheet back to template
             $spreadsheet->setActiveSheetIndex(0);
             
-            // Save to file
+            // ==================== SAVE FILE ====================
             $filename = 'Template_Jasa_Pelayanan_' . date('Y-m-d') . '.xlsx';
             $filepath = storage_path('app/temp/' . $filename);
             
-            // Ensure temp directory exists
             if (!file_exists(storage_path('app/temp'))) {
                 mkdir(storage_path('app/temp'), 0755, true);
             }
             
-            $writer = new Xlsx($spreadsheet);
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
             $writer->save($filepath);
             
             return response()->download($filepath, $filename)->deleteFileAfterSend(true);
             
         } catch (\Exception $e) {
-            \Log::error('Template download error', ['error' => $e->getMessage()]);
+            \Log::error('Template download error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             abort(500, 'Gagal membuat template: ' . $e->getMessage());
         }
     }
@@ -653,7 +894,9 @@ class ServiceAllowanceController extends Controller
     }
 
     /**
-     * Validate single import row
+     * ✅ FLEXIBLE: Validate single import row with better period parsing
+     * 
+     * This replaces the validateImportRow() method in ServiceAllowanceController
      */
     private function validateImportRow(array $rowData, int $rowNumber): array
     {
@@ -663,7 +906,7 @@ class ServiceAllowanceController extends Controller
         if (empty($rowData['user_id'])) {
             $errors[] = "ID Member tidak boleh kosong";
         } else {
-            $user = User::find($rowData['user_id']);
+            $user = \App\Models\User::find($rowData['user_id']);
             if (!$user) {
                 $errors[] = "ID Member tidak ditemukan: {$rowData['user_id']}";
             } elseif (!$user->isMember()) {
@@ -673,20 +916,27 @@ class ServiceAllowanceController extends Controller
             }
         }
         
-        // Validate period (MM/YYYY)
+        // ✅ FLEXIBLE: Validate period with multiple format support
+        $month = null;
+        $year = null;
+        
         if (empty($rowData['period'])) {
             $errors[] = "Periode tidak boleh kosong";
         } else {
-            // Parse period
-            $periodParts = explode('/', $rowData['period']);
-            if (count($periodParts) !== 2) {
-                $errors[] = "Format periode salah. Gunakan MM/YYYY (contoh: 01/2026)";
+            $period = trim($rowData['period']);
+            
+            // ✅ Try multiple formats
+            $parsed = $this->parsePeriod($period);
+            
+            if ($parsed === false) {
+                $errors[] = "Format periode tidak valid. Gunakan format: MM/YYYY, M/YYYY, atau YYYY-MM (contoh: 01/2026, 1/2026, atau 2026-01)";
             } else {
-                $month = (int) $periodParts[0];
-                $year = (int) $periodParts[1];
+                $month = $parsed['month'];
+                $year = $parsed['year'];
                 
+                // Validate range
                 if ($month < 1 || $month > 12) {
-                    $errors[] = "Bulan harus antara 01-12";
+                    $errors[] = "Bulan harus antara 1-12";
                 }
                 
                 if ($year < 2020 || $year > 2100) {
@@ -695,24 +945,24 @@ class ServiceAllowanceController extends Controller
                 
                 // Check if already exists
                 if (!empty($rowData['user_id']) && isset($month) && isset($year)) {
-                    $existing = ServiceAllowance::where('user_id', $rowData['user_id'])
+                    $existing = \App\Models\ServiceAllowance::where('user_id', $rowData['user_id'])
                         ->where('period_month', $month)
                         ->where('period_year', $year)
                         ->first();
                     
                     if ($existing) {
-                        $errors[] = "Jasa pelayanan untuk member ini di periode {$rowData['period']} sudah ada";
+                        $errors[] = "Jasa pelayanan untuk member ini di periode {$month}/{$year} sudah ada";
                     }
                 }
             }
         }
         
         // Validate amount
-        if (empty($rowData['amount']) && $rowData['amount'] !== 0) {
+        if (empty($rowData['amount']) && $rowData['amount'] !== 0 && $rowData['amount'] !== '0') {
             $errors[] = "Nominal tidak boleh kosong";
         } else {
             // Clean amount (remove formatting if any)
-            $amount = str_replace(['.', ',', ' '], '', $rowData['amount']);
+            $amount = str_replace(['.', ',', ' ', 'Rp'], '', $rowData['amount']);
             if (!is_numeric($amount)) {
                 $errors[] = "Nominal harus berupa angka";
             } elseif ($amount < 0) {
@@ -731,20 +981,96 @@ class ServiceAllowanceController extends Controller
         }
         
         // Return cleaned data
-        $periodParts = explode('/', $rowData['period']);
-        $amount = str_replace(['.', ',', ' '], '', $rowData['amount']);
+        $amount = str_replace(['.', ',', ' ', 'Rp'], '', $rowData['amount']);
         
         return [
             'valid' => true,
             'data' => [
                 'row' => $rowNumber,
                 'user_id' => $rowData['user_id'],
-                'period_month' => (int) $periodParts[0],
-                'period_year' => (int) $periodParts[1],
+                'period_month' => (int) $month,
+                'period_year' => (int) $year,
                 'received_amount' => (float) $amount,
                 'notes' => $rowData['notes'],
             ],
         ];
+    }
+
+    /**
+     * ✅ NEW: Parse period with multiple format support
+     * 
+     * Supported formats:
+     * - MM/YYYY (e.g., 01/2026)
+     * - M/YYYY (e.g., 1/2026)
+     * - YYYY-MM (e.g., 2026-01)
+     * - YYYY/MM (e.g., 2026/01)
+     * - Excel date serial number
+     * 
+     * @param mixed $period
+     * @return array|false ['month' => int, 'year' => int] or false if invalid
+     */
+    private function parsePeriod($period)
+    {
+        // Remove extra spaces
+        $period = trim($period);
+        
+        // Case 1: Empty
+        if (empty($period)) {
+            return false;
+        }
+        
+        // Case 2: Excel date serial number (e.g., 46110 for Jan 2026)
+        if (is_numeric($period) && $period > 40000) {
+            try {
+                // Convert Excel serial to date
+                $unixDate = ($period - 25569) * 86400;
+                $date = new \DateTime('@' . $unixDate);
+                
+                return [
+                    'month' => (int) $date->format('n'),
+                    'year' => (int) $date->format('Y'),
+                ];
+            } catch (\Exception $e) {
+                // Continue to other formats
+            }
+        }
+        
+        // Case 3: Format MM/YYYY or M/YYYY (e.g., "01/2026" or "1/2026")
+        if (preg_match('/^(\d{1,2})\/(\d{4})$/', $period, $matches)) {
+            return [
+                'month' => (int) $matches[1],
+                'year' => (int) $matches[2],
+            ];
+        }
+        
+        // Case 4: Format YYYY-MM (e.g., "2026-01")
+        if (preg_match('/^(\d{4})-(\d{1,2})$/', $period, $matches)) {
+            return [
+                'month' => (int) $matches[2],
+                'year' => (int) $matches[1],
+            ];
+        }
+        
+        // Case 5: Format YYYY/MM (e.g., "2026/01")
+        if (preg_match('/^(\d{4})\/(\d{1,2})$/', $period, $matches)) {
+            return [
+                'month' => (int) $matches[2],
+                'year' => (int) $matches[1],
+            ];
+        }
+        
+        // Case 6: Format "Jan 2026", "January 2026", etc.
+        try {
+            $date = new \DateTime($period);
+            return [
+                'month' => (int) $date->format('n'),
+                'year' => (int) $date->format('Y'),
+            ];
+        } catch (\Exception $e) {
+            // Invalid format
+        }
+        
+        return false;
     }
 
     /**
