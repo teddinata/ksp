@@ -20,10 +20,13 @@ class User extends Authenticatable implements JWTSubject
     protected $fillable = [
         'full_name',
         'employee_id',
+        'member_number',        // NEW: Dynamic member number YY/MM/NN
+        'registration_date',    // NEW: Member registration date
         'email',
         'password',
         'role',
-        'status',  // TAMBAHKAN INI
+        'status',
+        'resignation_reason',   // NEW: Reason if status = inactive
         'is_active',
         'phone_number',
         'address',
@@ -53,6 +56,7 @@ class User extends Authenticatable implements JWTSubject
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'joined_at' => 'date',
+            'registration_date' => 'date',  // NEW
             'is_active' => 'boolean',
         ];
     }
@@ -372,5 +376,149 @@ class User extends Authenticatable implements JWTSubject
     public function getManagedAccountsCountAttribute(): int
     {
         return $this->managedCashAccounts()->count();
+    }
+
+    // ==================== NEW: MEMBER MANAGEMENT ====================
+
+    /**
+     * Get member resignations.
+     */
+    public function resignations()
+    {
+        return $this->hasMany(MemberResignation::class, 'user_id');
+    }
+
+    /**
+     * Get active resignation request.
+     */
+    public function activeResignation()
+    {
+        return $this->hasOne(MemberResignation::class, 'user_id')
+            ->whereIn('status', ['pending', 'approved'])
+            ->latest();
+    }
+
+    /**
+     * Get member withdrawals.
+     */
+    public function withdrawals()
+    {
+        return $this->hasMany(MemberWithdrawal::class, 'user_id');
+    }
+
+    /**
+     * Get salary deductions.
+     */
+    public function salaryDeductions()
+    {
+        return $this->hasMany(SalaryDeduction::class, 'user_id');
+    }
+
+    /**
+     * Generate member number.
+     * Format: YY/MM/NN (Year/Month/Sequence)
+     * Example: 26/01/01
+     */
+    public static function generateMemberNumber(): string
+    {
+        $now = now();
+        $year = $now->format('y');
+        $month = $now->format('m');
+        
+        // Get count of members registered this month
+        $count = self::whereYear('registration_date', $now->year)
+            ->whereMonth('registration_date', $now->month)
+            ->whereNotNull('member_number')
+            ->count() + 1;
+        
+        return "{$year}/{$month}/" . str_pad($count, 2, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Register as member (assign member number).
+     */
+    public function registerAsMember(): void
+    {
+        if ($this->member_number) {
+            throw new \Exception('User already has a member number');
+        }
+
+        if (!$this->isMember()) {
+            throw new \Exception('User must have role "anggota" to be registered as member');
+        }
+
+        $this->update([
+            'member_number' => self::generateMemberNumber(),
+            'registration_date' => now(),
+            'status' => 'active',
+        ]);
+    }
+
+    /**
+     * Check if member can resign.
+     * 
+     * CONDITIONS:
+     * - Must be active member
+     * - No active loans
+     * - No pending resignation request
+     */
+    public function canResign(): array
+    {
+        $reasons = [];
+
+        if ($this->status !== 'active') {
+            $reasons[] = 'Member status must be active';
+        }
+
+        if ($this->hasOverdueInstallments()) {
+            $reasons[] = 'Has overdue installments';
+        }
+
+        $activeLoansCount = $this->loans()
+            ->whereIn('status', ['disbursed', 'active'])
+            ->count();
+
+        if ($activeLoansCount > 0) {
+            $reasons[] = "Has {$activeLoansCount} active loan(s)";
+        }
+
+        if ($this->activeResignation) {
+            $reasons[] = 'Already has pending resignation request';
+        }
+
+        return [
+            'can_resign' => empty($reasons),
+            'reasons' => $reasons,
+        ];
+    }
+
+    /**
+     * Get member financial summary including all balances.
+     */
+    public function getMemberFinancialSummary(): array
+    {
+        return [
+            'member_info' => [
+                'member_number' => $this->member_number,
+                'name' => $this->full_name,
+                'status' => $this->status,
+                'registration_date' => $this->registration_date?->format('d F Y'),
+            ],
+            'savings' => [
+                'total' => $this->total_savings,
+                'principal' => $this->getSavingsByType('principal'),
+                'mandatory' => $this->getSavingsByType('mandatory'),
+                'voluntary' => $this->getSavingsByType('voluntary'),
+                'holiday' => $this->getSavingsByType('holiday'),
+            ],
+            'loans' => [
+                'active_count' => $this->active_loans->count(),
+                'total_borrowed' => $this->active_loans->sum('principal_amount'),
+                'remaining_balance' => $this->total_loan_balance,
+                'monthly_installment' => $this->monthly_installment,
+            ],
+            'net_position' => $this->total_savings - $this->total_loan_balance,
+            'can_resign' => $this->canResign(),
+        ];
     }
 }

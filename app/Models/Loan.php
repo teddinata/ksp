@@ -33,6 +33,14 @@ class Loan extends Model
         'tenure_months',
         'installment_amount',
         'status',
+        'deduction_method',                         // NEW: none/salary/service_allowance/mixed
+        'salary_deduction_percentage',              // NEW: Percentage for salary deduction
+        'service_allowance_deduction_percentage',   // NEW: Percentage for service allowance deduction
+        'is_early_settlement',                      // NEW: Flag for early settlement
+        'settlement_date',                          // NEW: Date of settlement
+        'settlement_amount',                        // NEW: Amount paid for settlement
+        'settled_by',                               // NEW: Admin who processed settlement
+        'settlement_notes',                         // NEW: Notes about settlement
         'application_date',
         'approval_date',
         'disbursement_date',
@@ -51,11 +59,17 @@ class Loan extends Model
     {
         return [
             'principal_amount' => 'decimal:2',
+            'remaining_principal' => 'decimal:2',
             'interest_percentage' => 'decimal:2',
             'installment_amount' => 'decimal:2',
+            'salary_deduction_percentage' => 'decimal:2',               // NEW
+            'service_allowance_deduction_percentage' => 'decimal:2',    // NEW
+            'settlement_amount' => 'decimal:2',                         // NEW
+            'is_early_settlement' => 'boolean',                         // NEW
             'application_date' => 'date',
             'approval_date' => 'date',
             'disbursement_date' => 'date',
+            'settlement_date' => 'date',                                // NEW
         ];
     }
 
@@ -356,5 +370,101 @@ class Loan extends Model
         if ($allPaid && $this->isActive()) {
             $this->update(['status' => 'paid_off']);
         }
+    }
+
+    // ==================== NEW: EARLY SETTLEMENT & DEDUCTION ====================
+
+    /**
+     * Process early settlement.
+     * 
+     * BUSINESS LOGIC:
+     * - Hanya bayar remaining_principal (tanpa bunga)
+     * - Mark all pending installments as cancelled
+     * - Set loan status to paid_off
+     * 
+     * @param int $settledBy
+     * @param string|null $notes
+     * @return array Settlement summary
+     */
+    public function processEarlySettlement(int $settledBy, ?string $notes = null): array
+    {
+        if (!$this->isActive()) {
+            throw new \Exception('Hanya pinjaman aktif yang dapat dilunasi');
+        }
+
+        if ($this->remaining_principal <= 0) {
+            throw new \Exception('Pinjaman sudah lunas');
+        }
+
+        \DB::transaction(function() use ($settledBy, $notes) {
+            // Settlement amount = remaining principal only (no interest)
+            $settlementAmount = $this->remaining_principal;
+
+            // Cancel all pending installments
+            $this->installments()
+                ->whereIn('status', ['pending', 'overdue'])
+                ->update([
+                    'status' => 'cancelled',
+                    'notes' => 'Dibatalkan karena pelunasan dipercepat',
+                ]);
+
+            // Update loan
+            $this->update([
+                'status' => 'paid_off',
+                'is_early_settlement' => true,
+                'settlement_date' => now(),
+                'settlement_amount' => $settlementAmount,
+                'settled_by' => $settledBy,
+                'settlement_notes' => $notes,
+                'remaining_principal' => 0,
+            ]);
+
+            // Log activity
+            ActivityLog::createLog([
+                'activity' => 'early_settlement',
+                'module' => 'loans',
+                'description' => "Pelunasan dipercepat pinjaman {$this->loan_number} sebesar Rp " . 
+                                number_format($settlementAmount, 0, ',', '.'),
+            ]);
+        });
+
+        return [
+            'loan_number' => $this->loan_number,
+            'original_principal' => $this->principal_amount,
+            'settlement_amount' => $this->settlement_amount,
+            'saved_interest' => $this->getTotalInterestAttribute() - 
+                               $this->installments()->whereIn('status', ['paid', 'auto_paid'])->sum('interest_amount'),
+            'message' => 'Pelunasan berhasil. Anda hanya membayar sisa pokok tanpa bunga.',
+        ];
+    }
+
+    /**
+     * Get deduction method display name.
+     */
+    public function getDeductionMethodNameAttribute(): string
+    {
+        return match($this->deduction_method) {
+            'none' => 'Bayar Manual',
+            'salary' => 'Potong Gaji',
+            'service_allowance' => 'Potong Jasa Pelayanan',
+            'mixed' => 'Kombinasi (Gaji + Jasa)',
+            default => $this->deduction_method,
+        };
+    }
+
+    /**
+     * Check if loan uses salary deduction.
+     */
+    public function usesSalaryDeduction(): bool
+    {
+        return in_array($this->deduction_method, ['salary', 'mixed']);
+    }
+
+    /**
+     * Check if loan uses service allowance deduction.
+     */
+    public function usesServiceAllowanceDeduction(): bool
+    {
+        return in_array($this->deduction_method, ['service_allowance', 'mixed']);
     }
 }

@@ -25,7 +25,8 @@ class Saving extends Model
     protected $fillable = [
         'user_id',
         'cash_account_id',
-        'savings_type',
+        'saving_type_id',      // NEW: Foreign key to saving_types
+        'savings_type',        // DEPRECATED: Keep for backward compatibility
         'amount',
         'interest_percentage',
         'final_amount',
@@ -72,6 +73,14 @@ class Saving extends Model
     public function approvedBy()
     {
         return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    /**
+     * Get the saving type (NEW).
+     */
+    public function savingType()
+    {
+        return $this->belongsTo(SavingType::class, 'saving_type_id');
     }
 
     /**

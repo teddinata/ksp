@@ -70,71 +70,66 @@ Route::middleware(['jwt.auth'])->group(function () {
     Route::prefix('cash-accounts')->group(function () {
         
         // ==================== READ OPERATIONS ====================
-        // List & Summary (Admin & Manager with access control)
         Route::get('/', [App\Http\Controllers\Api\CashAccountController::class, 'index'])
-            ->middleware('role:admin,manager,anggota');  // ✅ ADD THIS
+            ->middleware('role:admin,manager,anggota');
         
         Route::get('/summary', [App\Http\Controllers\Api\CashAccountController::class, 'getSummary'])
-            ->middleware('role:admin,manager');  // ✅ ADD THIS
+            ->middleware('role:admin,manager');
         
         Route::get('/{id}', [App\Http\Controllers\Api\CashAccountController::class, 'show'])
-            ->middleware('role:admin,manager');  // ✅ ADD THIS
+            ->middleware('role:admin,manager');
         
         // ==================== WRITE OPERATIONS ====================
-        // Create, Update, Delete (Admin & Manager only)
         Route::post('/', [App\Http\Controllers\Api\CashAccountController::class, 'store'])
-            ->middleware('role:admin,manager');  // ✅ Already correct
+            ->middleware('role:admin,manager');
         
         Route::put('/{id}', [App\Http\Controllers\Api\CashAccountController::class, 'update'])
-            ->middleware('role:admin');  // ✅ Already correct
+            ->middleware('role:admin');
         
         Route::delete('/{id}', [App\Http\Controllers\Api\CashAccountController::class, 'destroy'])
-            ->middleware('role:admin');  // ✅ Already correct
+            ->middleware('role:admin');
         
         // ==================== MANAGER ASSIGNMENT ====================
-        // Manager Assignment (Admin only)
         Route::prefix('{cashAccountId}/managers')->group(function () {
             Route::get('/', [App\Http\Controllers\Api\CashAccountManagerController::class, 'index'])
-                ->middleware('role:admin,manager');  // ✅ Already correct
+                ->middleware('role:admin,manager');
             
             Route::post('/', [App\Http\Controllers\Api\CashAccountManagerController::class, 'store'])
-                ->middleware('role:admin');  // ✅ Already correct
+                ->middleware('role:admin');
             
             Route::delete('/{managerId}', [App\Http\Controllers\Api\CashAccountManagerController::class, 'destroy'])
-                ->middleware('role:admin');  // ✅ Already correct
+                ->middleware('role:admin');
         });
         
-        // ✅ OPTIONAL: Get available managers (for dropdown in UI)
         Route::get('/managers/available', [App\Http\Controllers\Api\CashAccountManagerController::class, 'getAvailableManagers'])
             ->middleware('role:admin');
         
         // ==================== INTEREST RATES ====================
-        // Interest Rates (Admin & assigned Manager)
         Route::prefix('{cashAccountId}/interest-rates')->group(function () {
             Route::get('/', [App\Http\Controllers\Api\InterestRateController::class, 'index'])
-                ->middleware('role:admin,manager');  // ✅ ADD THIS
+                ->middleware('role:admin,manager');
             
             Route::post('/', [App\Http\Controllers\Api\InterestRateController::class, 'store'])
-                ->middleware('role:admin,manager');  // ✅ Already correct
+                ->middleware('role:admin,manager');
         });
     });
     
     // Interest Rates - Direct access
     Route::prefix('interest-rates')->group(function () {
         Route::get('/current', [App\Http\Controllers\Api\InterestRateController::class, 'getCurrentRates'])
-            ->middleware('role:admin,manager');  // ✅ ADD THIS
+            ->middleware('role:admin,manager');
         
         Route::put('/{id}', [App\Http\Controllers\Api\InterestRateController::class, 'update'])
-            ->middleware('role:admin,manager');  // ✅ Already correct
+            ->middleware('role:admin,manager');
         
         Route::delete('/{id}', [App\Http\Controllers\Api\InterestRateController::class, 'destroy'])
-            ->middleware('role:admin');  // ✅ Already correct
+            ->middleware('role:admin');
     });
     
-    // Manager's Dashboard - Get accounts managed by a user
+    // Manager's Dashboard
     Route::get('/managers/{managerId}/cash-accounts', 
         [App\Http\Controllers\Api\CashAccountManagerController::class, 'getManagedAccounts'])
-        ->middleware('role:admin,manager');  // ✅ Already correct
+        ->middleware('role:admin,manager');
 });
 
 /*
@@ -144,9 +139,8 @@ Route::middleware(['jwt.auth'])->group(function () {
 */
 Route::middleware(['jwt.auth'])->group(function () {
     
-    // Accounting Periods
     Route::prefix('accounting-periods')->group(function () {
-        // Read operations (All authenticated users)
+        // Read operations
         Route::get('/', [App\Http\Controllers\Api\AccountingPeriodController::class, 'index']);
         Route::get('/active', [App\Http\Controllers\Api\AccountingPeriodController::class, 'getActive']);
         Route::get('/summary', [App\Http\Controllers\Api\AccountingPeriodController::class, 'getSummary']);
@@ -160,10 +154,35 @@ Route::middleware(['jwt.auth'])->group(function () {
         Route::delete('/{id}', [App\Http\Controllers\Api\AccountingPeriodController::class, 'destroy'])
             ->middleware('role:admin');
         
-        // Period closing (Admin only)
+        // Period closing
         Route::post('/{id}/close', [App\Http\Controllers\Api\AccountingPeriodController::class, 'close'])
             ->middleware('role:admin');
         Route::post('/{id}/reopen', [App\Http\Controllers\Api\AccountingPeriodController::class, 'reopen'])
+            ->middleware('role:admin');
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Saving Types Routes (NEW!)
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['jwt.auth'])->group(function () {
+    
+    Route::prefix('saving-types')->group(function () {
+        // Read operations (All authenticated users)
+        Route::get('/', [App\Http\Controllers\Api\SavingTypeController::class, 'index']);
+        Route::get('/defaults', [App\Http\Controllers\Api\SavingTypeController::class, 'defaults']);
+        Route::get('/mandatory', [App\Http\Controllers\Api\SavingTypeController::class, 'mandatory']);
+        Route::get('/optional', [App\Http\Controllers\Api\SavingTypeController::class, 'optional']);
+        Route::get('/{id}', [App\Http\Controllers\Api\SavingTypeController::class, 'show']);
+        
+        // Write operations (Admin only)
+        Route::post('/', [App\Http\Controllers\Api\SavingTypeController::class, 'store'])
+            ->middleware('role:admin');
+        Route::put('/{id}', [App\Http\Controllers\Api\SavingTypeController::class, 'update'])
+            ->middleware('role:admin');
+        Route::delete('/{id}', [App\Http\Controllers\Api\SavingTypeController::class, 'destroy'])
             ->middleware('role:admin');
     });
 });
@@ -175,9 +194,8 @@ Route::middleware(['jwt.auth'])->group(function () {
 */
 Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
     
-    // Savings
     Route::prefix('savings')->group(function () {
-        // Read operations (All authenticated users with access control)
+        // Read operations
         Route::get('/', [App\Http\Controllers\Api\SavingController::class, 'index']);
         Route::get('/summary', [App\Http\Controllers\Api\SavingController::class, 'getSummary']);
         Route::get('/type/{type}', [App\Http\Controllers\Api\SavingController::class, 'getByType']);
@@ -191,7 +209,7 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
         Route::delete('/{id}', [App\Http\Controllers\Api\SavingController::class, 'destroy'])
             ->middleware('role:admin,manager');
         
-        // Approval (Admin & Manager only)
+        // Approval
         Route::post('/{id}/approve', [App\Http\Controllers\Api\SavingController::class, 'approve'])
             ->middleware('role:admin,manager');
     });
@@ -199,27 +217,25 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| Loans Routes (UPDATED with Loan Limit Validation)
+| Loans Routes
 |--------------------------------------------------------------------------
 */
 Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
     
-    // Loans
     Route::prefix('loans')->group(function () {
         
-        // ✅ NEW: Check eligibility before applying (Member, Manager, Admin)
+        // Check eligibility
         Route::post('/check-eligibility', [App\Http\Controllers\Api\LoanController::class, 'checkEligibility']);
         
-        // Loan simulation (All authenticated users)
+        // Loan simulation
         Route::post('/simulate', [App\Http\Controllers\Api\LoanController::class, 'simulate']);
         
-        // Read operations (All authenticated users with access control)
+        // Read operations
         Route::get('/', [App\Http\Controllers\Api\LoanController::class, 'index']);
         Route::get('/summary', [App\Http\Controllers\Api\LoanController::class, 'getSummary']);
         Route::get('/{id}', [App\Http\Controllers\Api\LoanController::class, 'show']);
         
         // Write operations
-        // ✅ UPDATED: Now with loan limit validation in LoanRequest
         Route::post('/', [App\Http\Controllers\Api\LoanController::class, 'store'])
             ->middleware('role:admin,manager,anggota');
         
@@ -229,8 +245,14 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
         Route::delete('/{id}', [App\Http\Controllers\Api\LoanController::class, 'destroy'])
             ->middleware('role:admin,manager');
         
-        // Approval (Admin & Manager only)
+        // Approval
         Route::post('/{id}/approve', [App\Http\Controllers\Api\LoanController::class, 'approve'])
+            ->middleware('role:admin,manager');
+        
+        // NEW: Early Settlement
+        Route::get('/{id}/early-settlement/preview', [App\Http\Controllers\Api\LoanController::class, 'earlySettlementPreview'])
+            ->middleware('role:admin,manager');
+        Route::post('/{id}/early-settlement', [App\Http\Controllers\Api\LoanController::class, 'earlySettlement'])
             ->middleware('role:admin,manager');
         
         // Installments for specific loan
@@ -238,7 +260,7 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
         Route::get('/{loanId}/schedule', [App\Http\Controllers\Api\InstallmentController::class, 'schedule']);
     });
     
-    // Installments (No changes)
+    // Installments
     Route::prefix('installments')->group(function () {
         Route::get('/upcoming', [App\Http\Controllers\Api\InstallmentController::class, 'upcoming']);
         Route::get('/overdue', [App\Http\Controllers\Api\InstallmentController::class, 'overdue']);
@@ -250,49 +272,162 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| Members Routes (UPDATED with CREATE)
+| Member Resignation Routes (NEW!)
 |--------------------------------------------------------------------------
 */
 Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
     
-    // Members
+    Route::prefix('resignations')->group(function () {
+        // Read operations
+        Route::get('/', [App\Http\Controllers\Api\MemberResignationController::class, 'index'])
+            ->middleware('role:admin,manager');
+        Route::get('/statistics', [App\Http\Controllers\Api\MemberResignationController::class, 'statistics'])
+            ->middleware('role:admin,manager');
+        Route::get('/{id}', [App\Http\Controllers\Api\MemberResignationController::class, 'show'])
+            ->middleware('role:admin,manager');
+        
+        // Create resignation request
+        Route::post('/', [App\Http\Controllers\Api\MemberResignationController::class, 'store'])
+            ->middleware('role:admin,manager');
+        
+        // Process (approve/reject)
+        Route::post('/{id}/process', [App\Http\Controllers\Api\MemberResignationController::class, 'process'])
+            ->middleware('role:admin,manager');
+        
+        // Process withdrawal after approval
+        Route::post('/{id}/withdraw', [App\Http\Controllers\Api\MemberWithdrawalController::class, 'process'])
+            ->middleware('role:admin,manager');
+    });
+    
+    // Member resignation history
+    Route::get('/members/{userId}/resignations', [App\Http\Controllers\Api\MemberResignationController::class, 'memberHistory'])
+        ->middleware('role:admin,manager');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Member Withdrawal Routes (NEW!)
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['jwt.auth'])->group(function () {
+    
+    Route::prefix('withdrawals')->group(function () {
+        // Read operations (Admin & Manager only)
+        Route::get('/', [App\Http\Controllers\Api\MemberWithdrawalController::class, 'index'])
+            ->middleware('role:admin,manager');
+        Route::get('/statistics', [App\Http\Controllers\Api\MemberWithdrawalController::class, 'statistics'])
+            ->middleware('role:admin,manager');
+        Route::get('/{id}', [App\Http\Controllers\Api\MemberWithdrawalController::class, 'show'])
+            ->middleware('role:admin,manager');
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Cash Transfer Routes (NEW!)
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
+    
+    Route::prefix('cash-transfers')->group(function () {
+        // Read operations
+        Route::get('/', [App\Http\Controllers\Api\CashTransferController::class, 'index'])
+            ->middleware('role:admin,manager');
+        Route::get('/statistics', [App\Http\Controllers\Api\CashTransferController::class, 'statistics'])
+            ->middleware('role:admin,manager');
+        Route::get('/{id}', [App\Http\Controllers\Api\CashTransferController::class, 'show'])
+            ->middleware('role:admin,manager');
+        
+        // Create transfer
+        Route::post('/', [App\Http\Controllers\Api\CashTransferController::class, 'store'])
+            ->middleware('role:admin,manager');
+        
+        // Approve transfer
+        Route::post('/{id}/approve', [App\Http\Controllers\Api\CashTransferController::class, 'approve'])
+            ->middleware('role:admin,manager');
+        
+        // Cancel transfer
+        Route::post('/{id}/cancel', [App\Http\Controllers\Api\CashTransferController::class, 'cancel'])
+            ->middleware('role:admin,manager');
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Salary Deduction Routes (NEW!)
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
+    
+    Route::prefix('salary-deductions')->group(function () {
+        // Read operations
+        Route::get('/', [App\Http\Controllers\Api\SalaryDeductionController::class, 'index'])
+            ->middleware('role:admin,manager');
+        Route::get('/statistics', [App\Http\Controllers\Api\SalaryDeductionController::class, 'statistics'])
+            ->middleware('role:admin,manager');
+        Route::get('/period/{year}/{month}', [App\Http\Controllers\Api\SalaryDeductionController::class, 'byPeriod'])
+            ->middleware('role:admin,manager');
+        Route::get('/{id}', [App\Http\Controllers\Api\SalaryDeductionController::class, 'show'])
+            ->middleware('role:admin,manager');
+        
+        // Process single deduction
+        Route::post('/', [App\Http\Controllers\Api\SalaryDeductionController::class, 'store'])
+            ->middleware('role:admin,manager');
+        
+        // Batch process
+        Route::post('/batch', [App\Http\Controllers\Api\SalaryDeductionController::class, 'batchProcess'])
+            ->middleware('role:admin,manager');
+    });
+    
+    // Member annual summary
+    Route::get('/members/{userId}/salary-deductions/annual/{year}', 
+        [App\Http\Controllers\Api\SalaryDeductionController::class, 'memberAnnualSummary'])
+        ->middleware('role:admin,manager');
+});
+
+/*
+|--------------------------------------------------------------------------
+| Members Routes
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
+    
     Route::prefix('members')->group(function () {
-        // Profile (accessible by all authenticated users)
+        // Profile
         Route::get('/profile', [App\Http\Controllers\Api\MemberController::class, 'profile']);
         
-        // Statistics (Admin & Manager only)
+        // Statistics
         Route::get('/statistics', [App\Http\Controllers\Api\MemberController::class, 'statistics'])
             ->middleware('role:admin,manager');
         
-        // Create member (Admin & Manager only) - NEW!
+        // Create member
         Route::post('/', [App\Http\Controllers\Api\MemberController::class, 'store'])
             ->middleware('role:admin,manager');
         
-        // List members (Admin & Manager only)
+        // List members
         Route::get('/', [App\Http\Controllers\Api\MemberController::class, 'index'])
             ->middleware('role:admin,manager');
         
-        // Member details (accessible with access control)
+        // Member details
         Route::get('/{id}', [App\Http\Controllers\Api\MemberController::class, 'show']);
         
-        // Update profile (accessible with access control)
+        // Update profile
         Route::put('/{id}', [App\Http\Controllers\Api\MemberController::class, 'update']);
         
-        // Change password (accessible with access control)
+        // Change password
         Route::post('/{id}/change-password', [App\Http\Controllers\Api\MemberController::class, 'changePassword']);
         
-        // Financial summary (accessible with access control)
+        // Financial summary
         Route::get('/{id}/financial-summary', [App\Http\Controllers\Api\MemberController::class, 'financialSummary']);
         
-        // Activity history (accessible with access control)
+        // Activity history
         Route::get('/{id}/activity-history', [App\Http\Controllers\Api\MemberController::class, 'activityHistory']);
         
-        // Update status (Admin only)
+        // Update status
         Route::post('/{id}/update-status', [App\Http\Controllers\Api\MemberController::class, 'updateStatus'])
             ->middleware('role:admin');
     });
 });
-
 
 /*
 |--------------------------------------------------------------------------
@@ -301,49 +436,31 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
 */
 Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
     
-    // Service Allowances
     Route::prefix('service-allowances')->group(function () {
         
-        // ==================== READ OPERATIONS ====================
-        // All authenticated users (with access control inside controller)
+        // Read operations
         Route::get('/', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'index']);
         Route::get('/period-summary', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'periodSummary']);
         Route::get('/member/{userId}/history', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'memberHistory']);
         Route::get('/{id}', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'show']);
         
-        // ==================== WRITE OPERATIONS ====================
-        // Admin & Manager only
-        
-        // ✅ NEW: Input manual jasa pelayanan per member
+        // Write operations
         Route::post('/', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'store'])
             ->middleware('role:admin,manager');
         
-        // ✅ NEW: Preview calculation before processing
         Route::post('/preview', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'preview'])
             ->middleware('role:admin,manager');
         
-        // ❌ DEPRECATED: Remove distribute (tidak dipakai lagi)
-        // Route::post('/distribute', ...) 
-        
-        // ❌ DEPRECATED: Remove calculate (ganti dengan preview)
-        // Route::post('/calculate', ...)
-        
-        // Mark as paid (if needed manual payment)
         Route::post('/{id}/mark-as-paid', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'markAsPaid'])
             ->middleware('role:admin,manager');
 
-        // ==================== IMPORT / EXPORT ====================
-        // Admin & Manager only
-        
-        // ✅ Download template Excel
+        // Import / Export
         Route::get('/export/template', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'downloadTemplate'])
             ->middleware('role:admin,manager');
         
-        // ✅ Import dari Excel
         Route::post('/import/excel', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'importExcel'])
             ->middleware('role:admin,manager');
         
-        // ✅ Export ke Excel
         Route::get('/export/excel', [App\Http\Controllers\Api\ServiceAllowanceController::class, 'exportExcel'])
             ->middleware('role:admin,manager');
     });
@@ -356,9 +473,8 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
 */
 Route::middleware(['jwt.auth'])->group(function () {
     
-    // Gifts
     Route::prefix('gifts')->group(function () {
-        // Read operations (All authenticated users with access control)
+        // Read operations
         Route::get('/', [App\Http\Controllers\Api\GiftController::class, 'index']);
         Route::get('/statistics', [App\Http\Controllers\Api\GiftController::class, 'statistics']);
         Route::get('/type/{type}', [App\Http\Controllers\Api\GiftController::class, 'getByType']);
@@ -384,21 +500,20 @@ Route::middleware(['jwt.auth'])->group(function () {
 */
 Route::middleware(['jwt.auth'])->group(function () {
     
-    // Dashboard
     Route::prefix('dashboard')->group(function () {
-        // Admin Dashboard (Admin & Manager only)
+        // Admin Dashboard
         Route::get('/admin', [App\Http\Controllers\Api\DashboardController::class, 'adminDashboard'])
             ->middleware('role:admin,manager');
 
-         // ✅ NEW: Manager Dashboard (Manager only)
+        // Manager Dashboard
         Route::get('/manager', [App\Http\Controllers\Api\DashboardController::class, 'managerDashboard'])
             ->middleware('role:manager');
         
-        // Member Dashboard (Members only)
+        // Member Dashboard
         Route::get('/member', [App\Http\Controllers\Api\DashboardController::class, 'memberDashboard'])
             ->middleware('role:anggota');
         
-        // Quick Stats (All users)
+        // Quick Stats
         Route::get('/quick-stats', [App\Http\Controllers\Api\DashboardController::class, 'quickStats']);
     });
 });
@@ -410,7 +525,6 @@ Route::middleware(['jwt.auth'])->group(function () {
 */
 Route::middleware(['jwt.auth'])->group(function () {
     
-    // Activity Logs (Admin & Manager only)
     Route::prefix('activity-logs')->middleware('role:admin,manager')->group(function () {
         Route::get('/', [App\Http\Controllers\Api\ActivityLogController::class, 'index']);
         Route::get('/statistics', [App\Http\Controllers\Api\ActivityLogController::class, 'statistics']);
@@ -426,7 +540,6 @@ Route::middleware(['jwt.auth'])->group(function () {
 */
 Route::middleware(['jwt.auth'])->group(function () {
     
-    // Journals (Admin & Manager only)
     Route::prefix('journals')->middleware('role:admin,manager')->group(function () {
         Route::get('/', [App\Http\Controllers\Api\JournalController::class, 'index']);
         Route::post('/', [App\Http\Controllers\Api\JournalController::class, 'store']);
@@ -446,7 +559,6 @@ Route::middleware(['jwt.auth'])->group(function () {
 */
 Route::middleware(['jwt.auth'])->group(function () {
     
-    // Assets (Admin & Manager only)
     Route::prefix('assets')->middleware('role:admin,manager')->group(function () {
         Route::get('/', [App\Http\Controllers\Api\AssetController::class, 'index']);
         Route::post('/', [App\Http\Controllers\Api\AssetController::class, 'store']);

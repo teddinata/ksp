@@ -34,6 +34,11 @@ class LoanRequest extends FormRequest
             'application_date' => 'required|date',
             'loan_purpose' => 'required|string|max:500',
             'document_path' => 'nullable|string',
+            
+            // NEW: Deduction method fields
+            'deduction_method' => 'nullable|in:none,salary,service_allowance,mixed',
+            'salary_deduction_percentage' => 'required_if:deduction_method,salary,mixed|nullable|numeric|min:0|max:100',
+            'service_allowance_deduction_percentage' => 'required_if:deduction_method,service_allowance,mixed|nullable|numeric|min:0|max:100',
         ];
 
         return $rules;
@@ -62,6 +67,15 @@ class LoanRequest extends FormRequest
             'application_date.date' => 'Format tanggal pengajuan tidak valid',
             'loan_purpose.required' => 'Tujuan pinjaman harus diisi',
             'loan_purpose.max' => 'Tujuan pinjaman maksimal 500 karakter',
+            
+            // NEW: Deduction method messages
+            'deduction_method.in' => 'Metode potong tidak valid',
+            'salary_deduction_percentage.required_if' => 'Persentase potong gaji harus diisi',
+            'salary_deduction_percentage.min' => 'Persentase potong gaji minimal 0%',
+            'salary_deduction_percentage.max' => 'Persentase potong gaji maksimal 100%',
+            'service_allowance_deduction_percentage.required_if' => 'Persentase potong jasa pelayanan harus diisi',
+            'service_allowance_deduction_percentage.min' => 'Persentase potong jasa pelayanan minimal 0%',
+            'service_allowance_deduction_percentage.max' => 'Persentase potong jasa pelayanan maksimal 100%',
         ];
     }
 

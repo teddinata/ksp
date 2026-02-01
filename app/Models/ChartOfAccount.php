@@ -27,6 +27,8 @@ class ChartOfAccount extends Model
         'category',
         'account_type',
         'is_debit',
+        'is_contra',           // NEW: Flag for contra accounts
+        'contra_description',  // NEW: Description for contra usage
         'is_active',
         'description',
     ];
@@ -40,6 +42,7 @@ class ChartOfAccount extends Model
     {
         return [
             'is_debit' => 'boolean',
+            'is_contra' => 'boolean',  // NEW
             'is_active' => 'boolean',
         ];
     }
@@ -141,5 +144,70 @@ class ChartOfAccount extends Model
     public function getBalanceTypeAttribute(): string
     {
         return $this->is_debit ? 'Debit' : 'Kredit';
+    }
+
+    // ==================== NEW: CONTRA ACCOUNT METHODS ====================
+
+    /**
+     * Scope for contra accounts only.
+     */
+    public function scopeContraAccounts($query)
+    {
+        return $query->where('is_contra', true);
+    }
+
+    /**
+     * Scope for normal (non-contra) accounts.
+     */
+    public function scopeNormalAccounts($query)
+    {
+        return $query->where('is_contra', false);
+    }
+
+    /**
+     * Check if this is a contra account.
+     */
+    public function isContra(): bool
+    {
+        return $this->is_contra === true;
+    }
+
+    /**
+     * Get effective balance type considering contra nature.
+     * 
+     * Contra accounts have opposite balance compared to their category:
+     * - Assets contra: Credit balance (instead of Debit)
+     * - Liabilities contra: Debit balance (instead of Credit)
+     * - etc.
+     */
+    public function getEffectiveBalanceTypeAttribute(): string
+    {
+        if ($this->is_contra) {
+            // Reverse the normal balance
+            return $this->is_debit ? 'Kredit' : 'Debit';
+        }
+        
+        return $this->balance_type;
+    }
+
+    /**
+     * Get account characteristics summary.
+     */
+    public function getCharacteristicsAttribute(): string
+    {
+        $chars = [];
+        
+        $chars[] = $this->category_name;
+        $chars[] = $this->balance_type;
+        
+        if ($this->is_contra) {
+            $chars[] = 'Kontra';
+        }
+        
+        if (!$this->is_active) {
+            $chars[] = 'Non-aktif';
+        }
+        
+        return implode(' • ', $chars);
     }
 }

@@ -525,4 +525,114 @@ class LoanController extends Controller
             );
         }
     }
+    
+    /**
+     * Process early settlement (pelunasan dipercepat).
+     * 
+     * POST /api/loans/{id}/early-settlement
+     * 
+     * Business Logic:
+     * - Only pay remaining principal (NO interest)
+     * - Cancel all pending installments
+     * - Mark loan as paid_off
+     * 
+     * @param int $id
+     * @param \App\Http\Requests\EarlySettlementRequest $request
+     * @return JsonResponse
+     */
+    public function earlySettlement($id, \App\Http\Requests\EarlySettlementRequest $request): JsonResponse
+    {
+        try {
+            $loan = Loan::with(['user', 'installments'])->findOrFail($id);
+            $settledBy = auth()->id();
+            
+            // Process early settlement using model method
+            $result = $loan->processEarlySettlement($settledBy, $request->settlement_notes);
+            
+            // Reload with latest data
+            $loan->fresh(['user', 'installments']);
+            
+            return $this->successResponse(
+                [
+                    'loan' => $loan,
+                    'settlement_summary' => $result
+                ],
+                'Pinjaman berhasil dilunasi dipercepat'
+            );
+            
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return $this->errorResponse('Pinjaman tidak ditemukan', 404);
+        } catch (\Exception $e) {
+            return $this->errorResponse(
+                'Gagal memproses pelunasan: ' . $e->getMessage(),
+                500
+            );
+        }
+    }
+    
+    /**
+     * Get early settlement preview.
+     * 
+     * GET /api/loans/{id}/early-settlement/preview
+     * 
+     * Shows how much member needs to pay for early settlement.
+     * 
+     * @param int $id
+     * @return JsonResponse
+     */
+    public function earlySettlementPreview($id): JsonResponse
+    {
+        try {
+            $loan = Loan::with(['user', 'installments'])->findOrFail($id);
+            
+            // Validate loan can be settled
+            if (!in_array($loan->status, ['disbursed', 'active'])) {
+                return $this->errorResponse(
+                    'Hanya pinjaman aktif yang dapat dilunasi. Status: ' . $loan->status,
+                    422
+                );
+            }
+            
+            if ($loan->remaining_principal <= 0) {
+                return $this->errorResponse('Pinjaman sudah lunas', 422);
+            }
+            
+            // Calculate savings
+            $paidInstallments = $loan->installments()
+                ->whereIn('status', ['paid', 'auto_paid'])
+                ->get();
+            
+            $pendingInstallments = $loan->installments()
+                ->whereIn('status', ['pending', 'overdue'])
+                ->get();
+            
+            $paidInterest = $paidInstallments->sum('interest_amount');
+            $pendingInterest = $pendingInstallments->sum('interest_amount');
+            
+            $preview = [
+                'loan_number' => $loan->loan_number,
+                'original_principal' => $loan->principal_amount,
+                'remaining_principal' => $loan->remaining_principal,
+                'settlement_amount' => $loan->remaining_principal, // ONLY principal
+                'interest_saved' => $pendingInterest,
+                'paid_installments' => $paidInstallments->count(),
+                'pending_installments' => $pendingInstallments->count(),
+                'total_interest_paid' => $paidInterest,
+                'message' => 'Anda hanya perlu membayar sisa pokok tanpa bunga'
+            ];
+            
+            return $this->successResponse(
+                $preview,
+                'Preview pelunasan dipercepat'
+            );
+            
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return $this->errorResponse('Pinjaman tidak ditemukan', 404);
+        } catch (\Exception $e) {
+            return $this->errorResponse(
+                'Gagal menghitung preview: ' . $e->getMessage(),
+                500
+            );
+        }
+    }
 }
