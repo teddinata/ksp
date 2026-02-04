@@ -288,7 +288,7 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
         
         // Create resignation request
         Route::post('/', [App\Http\Controllers\Api\MemberResignationController::class, 'store'])
-            ->middleware('role:admin,manager');
+            ->middleware('role:admin,manager,anggota');
         
         // Process (approve/reject)
         Route::post('/{id}/process', [App\Http\Controllers\Api\MemberResignationController::class, 'process'])
