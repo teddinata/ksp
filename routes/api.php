@@ -280,9 +280,9 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
     Route::prefix('resignations')->group(function () {
         // Read operations
         Route::get('/', [App\Http\Controllers\Api\MemberResignationController::class, 'index'])
-            ->middleware('role:admin,manager');
+            ->middleware('role:admin,manager,anggota');
         Route::get('/statistics', [App\Http\Controllers\Api\MemberResignationController::class, 'statistics'])
-            ->middleware('role:admin,manager');
+            ->middleware('role:admin,manager,anggota');
         Route::get('/{id}', [App\Http\Controllers\Api\MemberResignationController::class, 'show'])
             ->middleware('role:admin,manager');
         
