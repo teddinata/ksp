@@ -23,10 +23,14 @@ class MemberResignationRequest extends FormRequest
      */
     public function rules(): array
     {
+        $user = auth()->user();
+        
+        // If user is admin/manager, user_id is required
+        // If user is member (anggota), user_id is optional (will use auth user)
         return [
-            'user_id' => 'required|exists:users,id',
+            'user_id' => $user && $user->isMember() ? 'nullable|exists:users,id' : 'required|exists:users,id',
             'reason' => 'required|string|min:10|max:500',
-            'resignation_date' => 'nullable|date|before_or_equal:today',
+            'resignation_date' => 'nullable|date|after_or_equal:today|before_or_equal:' . now()->addDays(90)->toDateString(),
         ];
     }
 
@@ -42,7 +46,8 @@ class MemberResignationRequest extends FormRequest
             'reason.min' => 'Alasan keluar minimal 10 karakter',
             'reason.max' => 'Alasan keluar maksimal 500 karakter',
             'resignation_date.date' => 'Format tanggal tidak valid',
-            'resignation_date.before_or_equal' => 'Tanggal pengajuan tidak boleh di masa depan',
+            'resignation_date.after_or_equal' => 'Tanggal pengajuan tidak boleh di masa lalu',
+            'resignation_date.before_or_equal' => 'Tanggal pengajuan maksimal 90 hari ke depan',
         ];
     }
 
@@ -56,23 +61,19 @@ class MemberResignationRequest extends FormRequest
             if ($this->user_id) {
                 $user = User::find($this->user_id);
                 
-                // 1. Must be a member
-                if ($user && !$user->isMember()) {
-                    $validator->errors()->add(
-                        'user_id',
-                        'User bukan anggota. Hanya anggota yang dapat mengajukan keluar'
-                    );
+                if (!$user) {
+                    return;
                 }
                 
-                // 2. Must be active
-                if ($user && $user->status !== 'active') {
+                // 1. Must be active
+                if ($user->status !== 'active') {
                     $validator->errors()->add(
                         'user_id',
                         'Member tidak aktif. Status: ' . $user->status
                     );
                 }
                 
-                // 3. CRITICAL: No active loans allowed
+                // 2. CRITICAL: No active loans allowed
                 $activeLoans = Loan::where('user_id', $user->id)
                     ->whereIn('status', ['disbursed', 'active'])
                     ->get();
@@ -81,15 +82,15 @@ class MemberResignationRequest extends FormRequest
                     $loanNumbers = $activeLoans->pluck('loan_number')->implode(', ');
                     $validator->errors()->add(
                         'user_id',
-                        "Tidak dapat mengajukan keluar. Member masih memiliki {$activeLoans->count()} pinjaman aktif: {$loanNumbers}. Harap lunasi terlebih dahulu."
+                        "Tidak dapat mengajukan keluar. Anda masih memiliki {$activeLoans->count()} pinjaman aktif: {$loanNumbers}. Harap lunasi terlebih dahulu."
                     );
                 }
                 
-                // 4. Check if already has pending resignation
-                if ($user && $user->activeResignation) {
+                // 3. Check if already has pending resignation
+                if ($user->activeResignation) {
                     $validator->errors()->add(
                         'user_id',
-                        'Member sudah memiliki pengajuan keluar yang masih dalam proses'
+                        'Anda sudah memiliki pengajuan keluar yang masih dalam proses'
                     );
                 }
             }
@@ -115,11 +116,22 @@ class MemberResignationRequest extends FormRequest
      */
     protected function prepareForValidation()
     {
+        $user = auth()->user();
+        
+        $mergeData = [];
+        
+        // If user is member (anggota) and user_id not provided, use authenticated user
+        if ($user && $user->isMember() && !$this->user_id) {
+            $mergeData['user_id'] = $user->id;
+        }
+        
         // Set default resignation_date to today if not provided
         if (!$this->resignation_date) {
-            $this->merge([
-                'resignation_date' => now()->toDateString()
-            ]);
+            $mergeData['resignation_date'] = now()->toDateString();
+        }
+        
+        if (!empty($mergeData)) {
+            $this->merge($mergeData);
         }
     }
 }
