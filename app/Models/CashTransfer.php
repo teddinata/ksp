@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\DB;
+use App\Services\AutoJournalService;
 
 class CashTransfer extends Model
 {
@@ -215,6 +216,10 @@ class CashTransfer extends Model
      * 2. Create auto journal entry
      * 3. Mark as completed
      */
+    /**
+     * Approve and complete transfer.
+     * ✅ FIXED: Gunakan AutoJournalService, fix created_by null bug
+     */
     public function approveAndComplete(int $approvedBy): void
     {
         if (!$this->isPending()) {
@@ -231,16 +236,18 @@ class CashTransfer extends Model
             $this->fromCashAccount->updateBalance($this->amount, 'subtract');
             $this->toCashAccount->updateBalance($this->amount, 'add');
 
-            // Create auto journal entry
-            $journal = $this->createJournalEntry();
-
-            // Update transfer status
+            // Update transfer status FIRST (fix: before journal creation)
             $this->update([
                 'status' => 'completed',
                 'approved_by' => $approvedBy,
                 'approved_at' => now(),
-                'journal_id' => $journal->id,
             ]);
+
+            // ✅ FIXED: Create auto journal using service (no more null created_by)
+            $journal = AutoJournalService::cashTransferApproved($this, $approvedBy);
+
+            // Link journal to transfer
+            $this->update(['journal_id' => $journal->id]);
 
             // Log activity
             ActivityLog::createLog([
@@ -258,7 +265,7 @@ class CashTransfer extends Model
      * Dr. Kas Tujuan (To Account)
      *   Cr. Kas Sumber (From Account)
      */
-    private function createJournalEntry(): Journal
+    private function createJournalEntry(int $approvedBy): Journal
     {
         // TODO: Get proper chart of account IDs
         // For now, we'll use placeholder logic
@@ -269,7 +276,8 @@ class CashTransfer extends Model
             'journal_type' => 'special',
             'description' => "Transfer Kas: {$this->fromCashAccount->name} ke {$this->toCashAccount->name} - {$this->purpose}",
             'transaction_date' => $this->transfer_date,
-            'created_by' => $this->approved_by,
+            // 'created_by' => $this->approved_by,
+            'created_by' => $approvedBy, 
             'is_auto_generated' => true,
             'is_editable' => false,
             'source_module' => 'cash_transfers',

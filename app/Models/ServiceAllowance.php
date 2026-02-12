@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use App\Services\AutoJournalService;
 
 class ServiceAllowance extends Model
 {
@@ -20,9 +21,9 @@ class ServiceAllowance extends Model
         'user_id',
         'period_month',
         'period_year',
-        'received_amount',      // ✅ NEW: Dari RS
-        'installment_paid',     // ✅ NEW: Dipotong untuk cicilan
-        'remaining_amount',     // ✅ NEW: Sisa untuk member
+        'received_amount', // ✅ NEW: Dari RS
+        'installment_paid', // ✅ NEW: Dipotong untuk cicilan
+        'remaining_amount', // ✅ NEW: Sisa untuk member
         'status',
         'payment_date',
         'notes',
@@ -37,9 +38,9 @@ class ServiceAllowance extends Model
         return [
             'period_month' => 'integer',
             'period_year' => 'integer',
-            'received_amount' => 'decimal:2',      // ✅ NEW
-            'installment_paid' => 'decimal:2',     // ✅ NEW
-            'remaining_amount' => 'decimal:2',     // ✅ NEW
+            'received_amount' => 'decimal:2', // ✅ NEW
+            'installment_paid' => 'decimal:2', // ✅ NEW
+            'remaining_amount' => 'decimal:2', // ✅ NEW
             'payment_date' => 'date',
         ];
     }
@@ -48,12 +49,12 @@ class ServiceAllowance extends Model
 
     public function user()
     {
-        return $this->belongsTo(User::class, 'user_id');
+        return $this->belongsTo(User::class , 'user_id');
     }
 
     public function distributedBy()
     {
-        return $this->belongsTo(User::class, 'distributed_by');
+        return $this->belongsTo(User::class , 'distributed_by');
     }
 
     // ==================== SCOPES ====================
@@ -86,7 +87,7 @@ class ServiceAllowance extends Model
     public function scopeByPeriod($query, int $month, int $year)
     {
         return $query->where('period_month', $month)
-                     ->where('period_year', $year);
+            ->where('period_year', $year);
     }
 
     public function scopeByYear($query, int $year)
@@ -101,24 +102,24 @@ class ServiceAllowance extends Model
      */
     public function getStatusNameAttribute(): string
     {
-        return match($this->status) {
-            'pending' => 'Menunggu Input',
-            'processed' => 'Sudah Diproses',
-            'paid' => 'Sudah Dibayar',
-            'cancelled' => 'Dibatalkan',
-            default => $this->status,
-        };
+        return match ($this->status) {
+                'pending' => 'Menunggu Input',
+                'processed' => 'Sudah Diproses',
+                'paid' => 'Sudah Dibayar',
+                'cancelled' => 'Dibatalkan',
+                default => $this->status,
+            };
     }
 
     public function getStatusColorAttribute(): string
     {
-        return match($this->status) {
-            'pending' => 'warning',
-            'processed' => 'info',
-            'paid' => 'success',
-            'cancelled' => 'danger',
-            default => 'secondary',
-        };
+        return match ($this->status) {
+                'pending' => 'warning',
+                'processed' => 'info',
+                'paid' => 'success',
+                'cancelled' => 'danger',
+                default => 'secondary',
+            };
     }
 
     public function getPeriodDisplayAttribute(): string
@@ -188,78 +189,81 @@ class ServiceAllowance extends Model
         float $receivedAmount,
         int $processedBy,
         ?string $notes = null
-    ): array {
+        ): array
+    {
         DB::beginTransaction();
-        
+
         try {
             // Check if already exists
             $existing = self::where('user_id', $member->id)
                 ->byPeriod($month, $year)
                 ->first();
-                
+
             if ($existing) {
                 throw new \Exception('Jasa pelayanan untuk member ini di periode ini sudah ada');
             }
-            
+
             // Get installments for this period
             $startDate = Carbon::create($year, $month, 1)->startOfMonth();
             $endDate = Carbon::create($year, $month, 1)->endOfMonth();
-            
-            $currentMonthInstallments = Installment::whereHas('loan', function($q) use ($member) {
+
+            $currentMonthInstallments = Installment::whereHas('loan', function ($q) use ($member) {
                 $q->where('user_id', $member->id)
-                  ->whereIn('status', ['disbursed', 'active']);
+                    ->whereIn('status', ['disbursed', 'active']);
             })
-            ->where('status', 'pending')
-            ->whereBetween('due_date', [$startDate, $endDate])
-            ->orderBy('due_date')
-            ->get();
-            
+                ->where('status', 'pending')
+                ->whereBetween('due_date', [$startDate, $endDate])
+                ->orderBy('due_date')
+                ->get();
+
             $totalInstallmentDue = $currentMonthInstallments->sum('total_amount');
-            
+
             // Calculate payment distribution
             $paidAmount = 0;
             $remainingAllowance = $receivedAmount;
             $remainingInstallment = 0;
-            
+
             if ($totalInstallmentDue > 0) {
                 if ($receivedAmount >= $totalInstallmentDue) {
                     // Jasa pelayanan CUKUP
                     $paidAmount = $totalInstallmentDue;
                     $remainingAllowance = $receivedAmount - $totalInstallmentDue;
-                    
+
                     // Auto pay all installments
                     foreach ($currentMonthInstallments as $installment) {
                         $installment->update([
                             'status' => 'auto_paid',
                             'payment_date' => now(),
                             'payment_method' => 'service_allowance',
-                            'notes' => 'Dibayar otomatis dari jasa pelayanan periode ' . 
-                                       Carbon::create($year, $month, 1)->format('F Y'),
+                            'notes' => 'Dibayar otomatis dari jasa pelayanan periode ' .
+                            Carbon::create($year, $month, 1)->format('F Y'),
                         ]);
-                        
+
                         // Update loan remaining principal
                         $installment->loan->remaining_principal -= $installment->principal_amount;
                         $installment->loan->save();
-                        
+
                         // Check if loan is paid off
                         if ($installment->loan->remaining_principal <= 0) {
                             $installment->loan->status = 'paid_off';
                             $installment->loan->save();
                         }
                     }
-                    
-                } else {
+
+                }
+                else {
                     // Jasa pelayanan TIDAK CUKUP
                     $paidAmount = $receivedAmount;
                     $remainingInstallment = $totalInstallmentDue - $receivedAmount;
                     $remainingAllowance = 0;
-                    
+
                     // Pay partial installments
                     $remainingToPay = $receivedAmount;
-                    
+
                     foreach ($currentMonthInstallments as $installment) {
-                        if ($remainingToPay <= 0) break;
-                        
+                        if ($remainingToPay <= 0)
+                            break;
+
                         if ($remainingToPay >= $installment->total_amount) {
                             // Pay full
                             $installment->update([
@@ -268,34 +272,36 @@ class ServiceAllowance extends Model
                                 'payment_method' => 'service_allowance',
                                 'notes' => 'Dibayar otomatis dari jasa pelayanan',
                             ]);
-                            
+
                             $remainingToPay -= $installment->total_amount;
-                            
+
                             // Update loan
                             $installment->loan->remaining_principal -= $installment->principal_amount;
                             $installment->loan->save();
-                            
-                        } else {
+
+                        }
+                        else {
                             // Partial payment (sisanya member bayar manual)
                             $installment->update([
                                 'paid_amount' => $remainingToPay,
                                 'status' => 'partial',
                                 'payment_date' => now(),
                                 'payment_method' => 'service_allowance',
-                                'notes' => "Dibayar sebagian Rp " . number_format($remainingToPay, 0, ',', '.') . 
-                                          " dari jasa pelayanan. Sisa: Rp " . 
-                                          number_format($installment->total_amount - $remainingToPay, 0, ',', '.'),
+                                'notes' => "Dibayar sebagian Rp " . number_format($remainingToPay, 0, ',', '.') .
+                                " dari jasa pelayanan. Sisa: Rp " .
+                                number_format($installment->total_amount - $remainingToPay, 0, ',', '.'),
                             ]);
-                            
+
                             $remainingToPay = 0;
                         }
                     }
                 }
-            } else {
+            }
+            else {
                 // No installments, all for member
                 $remainingAllowance = $receivedAmount;
             }
-            
+
             // Create service allowance record
             $serviceAllowance = self::create([
                 'user_id' => $member->id,
@@ -309,9 +315,45 @@ class ServiceAllowance extends Model
                 'distributed_by' => $processedBy,
                 'notes' => $notes,
             ]);
-            
+
+            // ✅ NEW: Create auto-journal if installments were paid
+            if ($paidAmount > 0) {
+                // Hitung porsi principal dan interest secara proporsional
+                // Full-paid installments: pakai full amount
+                // Partial-paid: pakai rasio
+                $totalPrincipal = 0;
+                $totalInterest = 0;
+
+                foreach ($currentMonthInstallments as $inst) {
+                    if ($inst->status === 'auto_paid') {
+                        // Full payment
+                        $totalPrincipal += $inst->principal_amount;
+                        $totalInterest += $inst->interest_amount;
+                    }
+                    elseif ($inst->status === 'partial' && $inst->paid_amount > 0) {
+                        // Partial payment — hitung proporsional
+                        $ratio = $inst->paid_amount / $inst->total_amount;
+                        $totalPrincipal += $inst->principal_amount * $ratio;
+                        $totalInterest += $inst->interest_amount * $ratio;
+                    }
+                }
+
+                // Koreksi pembulatan agar principal + interest = paidAmount
+                $calculatedTotal = round($totalPrincipal + $totalInterest, 2);
+                if ($calculatedTotal > 0 && abs($calculatedTotal - $paidAmount) > 0.01) {
+                    $totalPrincipal = $paidAmount - $totalInterest;
+                }
+
+                AutoJournalService::serviceAllowanceProcessed(
+                    $serviceAllowance,
+                    $processedBy,
+                    round($totalPrincipal, 2),
+                    round($totalInterest, 2)
+                );
+            }
+
             DB::commit();
-            
+
             return [
                 'service_allowance' => $serviceAllowance,
                 'summary' => [
@@ -323,8 +365,9 @@ class ServiceAllowance extends Model
                     'message' => self::generateSummaryMessage($remainingAllowance, $remainingInstallment),
                 ],
             ];
-            
-        } catch (\Exception $e) {
+
+        }
+        catch (\Exception $e) {
             DB::rollBack();
             throw $e;
         }
@@ -337,9 +380,11 @@ class ServiceAllowance extends Model
     {
         if ($installmentDue > 0) {
             return "Member harus bayar sisa cicilan: Rp " . number_format($installmentDue, 0, ',', '.');
-        } elseif ($remaining > 0) {
+        }
+        elseif ($remaining > 0) {
             return "Sisa jasa pelayanan untuk member: Rp " . number_format($remaining, 0, ',', '.');
-        } else {
+        }
+        else {
             return "Jasa pelayanan pas untuk bayar cicilan.";
         }
     }

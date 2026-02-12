@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use App\Services\AutoJournalService;
 
 class Installment extends Model
 {
@@ -61,7 +62,7 @@ class Installment extends Model
      */
     public function loan()
     {
-        return $this->belongsTo(Loan::class, 'loan_id');
+        return $this->belongsTo(Loan::class , 'loan_id');
     }
 
     /**
@@ -69,7 +70,7 @@ class Installment extends Model
      */
     public function confirmedBy()
     {
-        return $this->belongsTo(User::class, 'confirmed_by');
+        return $this->belongsTo(User::class , 'confirmed_by');
     }
 
     /**
@@ -117,14 +118,14 @@ class Installment extends Model
      */
     public function getStatusNameAttribute(): string
     {
-        return match($this->status) {
-            'pending' => 'Belum Dibayar',
-            'auto_paid' => 'Dibayar Otomatis',
-            'manual_pending' => 'Pembayaran Manual (Menunggu Konfirmasi)',
-            'paid' => 'Sudah Dibayar',
-            'overdue' => 'Terlambat',
-            default => $this->status,
-        };
+        return match ($this->status) {
+                'pending' => 'Belum Dibayar',
+                'auto_paid' => 'Dibayar Otomatis',
+                'manual_pending' => 'Pembayaran Manual (Menunggu Konfirmasi)',
+                'paid' => 'Sudah Dibayar',
+                'overdue' => 'Terlambat',
+                default => $this->status,
+            };
     }
 
     /**
@@ -132,14 +133,14 @@ class Installment extends Model
      */
     public function getStatusColorAttribute(): string
     {
-        return match($this->status) {
-            'pending' => 'warning',
-            'auto_paid' => 'success',
-            'manual_pending' => 'info',
-            'paid' => 'success',
-            'overdue' => 'danger',
-            default => 'secondary',
-        };
+        return match ($this->status) {
+                'pending' => 'warning',
+                'auto_paid' => 'success',
+                'manual_pending' => 'info',
+                'paid' => 'success',
+                'overdue' => 'danger',
+                default => 'secondary',
+            };
     }
 
     /**
@@ -194,6 +195,10 @@ class Installment extends Model
      * Mark as paid.
      * UPDATED: Now also updates remaining_principal in Loan
      */
+    /**
+     * Mark as paid.
+     * UPDATED: Now creates auto-journal + updates remaining_principal in Loan
+     */
     public function markAsPaid(string $method, ?int $confirmedBy = null, ?string $notes = null): void
     {
         DB::transaction(function () use ($method, $confirmedBy, $notes) {
@@ -210,7 +215,7 @@ class Installment extends Model
             // Update remaining_principal in Loan
             $loan = $this->loan;
             $newRemainingPrincipal = $loan->remaining_principal - $this->principal_amount;
-            
+
             $loan->update([
                 'remaining_principal' => max(0, $newRemainingPrincipal),
             ]);
@@ -219,6 +224,13 @@ class Installment extends Model
             if ($newRemainingPrincipal <= 0) {
                 $loan->update(['status' => 'paid_off']);
             }
+
+            // ✅ NEW: Create auto-journal
+            AutoJournalService::installmentPaid(
+                $this,
+                $confirmedBy ?? auth()->id(),
+                $method
+            );
         });
     }
 

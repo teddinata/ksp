@@ -10,6 +10,7 @@ use App\Models\CashAccount;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Services\AutoJournalService;
 
 class SavingController extends Controller
 {
@@ -64,9 +65,9 @@ class SavingController extends Controller
             // Search by user name or employee ID
             if ($request->has('search') && ($user->isAdmin() || $user->isManager())) {
                 $search = $request->search;
-                $query->whereHas('user', function($q) use ($search) {
+                $query->whereHas('user', function ($q) use ($search) {
                     $q->where('full_name', 'like', "%{$search}%")
-                      ->orWhere('employee_id', 'like', "%{$search}%");
+                        ->orWhere('employee_id', 'like', "%{$search}%");
                 });
             }
 
@@ -77,16 +78,18 @@ class SavingController extends Controller
 
             // Pagination
             $perPage = $request->get('per_page', 15);
-            
+
             if ($request->has('all') && $request->boolean('all')) {
                 $savings = $query->get();
                 return $this->successResponse($savings, 'Savings retrieved successfully');
-            } else {
+            }
+            else {
                 $savings = $query->paginate($perPage);
                 return $this->paginatedResponse($savings, 'Savings retrieved successfully');
             }
 
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Failed to retrieve savings: ' . $e->getMessage(),
                 500
@@ -110,7 +113,7 @@ class SavingController extends Controller
     {
         try {
             $user = auth()->user();
-            
+
             // Get cash account and interest rate
             $cashAccount = CashAccount::findOrFail($request->cash_account_id);
             $interestRate = $cashAccount->currentSavingsRate();
@@ -118,6 +121,8 @@ class SavingController extends Controller
 
             // Calculate final amount with interest
             $finalAmount = Saving::calculateFinalAmount($request->amount, $interestPercentage);
+
+            \DB::beginTransaction();
 
             // Create saving
             $saving = Saving::create([
@@ -136,6 +141,11 @@ class SavingController extends Controller
             // Update cash account balance
             $cashAccount->updateBalance($request->amount, 'add');
 
+            // ✅ NEW: Create auto-journal
+            AutoJournalService::savingApproved($saving, $user->id);
+
+            \DB::commit();
+
             // Load relationships
             $saving->load(['user:id,full_name,employee_id', 'cashAccount:id,code,name', 'approvedBy:id,full_name']);
 
@@ -145,9 +155,13 @@ class SavingController extends Controller
                 201
             );
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            \DB::rollBack();
             return $this->errorResponse('Cash account not found', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
+            \DB::rollBack();
             return $this->errorResponse(
                 'Failed to create saving: ' . $e->getMessage(),
                 500
@@ -179,9 +193,11 @@ class SavingController extends Controller
                 'Saving retrieved successfully'
             );
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('Saving not found or access denied', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Failed to retrieve saving: ' . $e->getMessage(),
                 500
@@ -239,9 +255,11 @@ class SavingController extends Controller
                 'Saving updated successfully'
             );
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('Saving not found', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Failed to update saving: ' . $e->getMessage(),
                 500
@@ -279,9 +297,11 @@ class SavingController extends Controller
                 'Saving deleted successfully'
             );
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('Saving not found', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Failed to delete saving: ' . $e->getMessage(),
                 500
@@ -310,31 +330,42 @@ class SavingController extends Controller
                 );
             }
 
+            \DB::beginTransaction();
+
             $saving->update([
                 'status' => $request->status,
                 'notes' => $request->notes ?? $saving->notes,
                 'approved_by' => $user->id,
             ]);
 
-            // If approved, update cash account balance
+            // If approved, update cash account balance + create journal
             if ($request->status === 'approved') {
                 $cashAccount = CashAccount::find($saving->cash_account_id);
                 if ($cashAccount) {
                     $cashAccount->updateBalance($saving->amount, 'add');
                 }
+
+                // ✅ NEW: Create auto-journal
+                AutoJournalService::savingApproved($saving, $user->id);
             }
+
+            \DB::commit();
 
             $saving->load(['user:id,full_name,employee_id', 'cashAccount:id,code,name', 'approvedBy:id,full_name']);
 
-            $message = $request->status === 'approved' 
-                ? 'Saving approved successfully' 
+            $message = $request->status === 'approved'
+                ? 'Saving approved successfully'
                 : 'Saving rejected successfully';
 
             return $this->successResponse($saving, $message);
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            \DB::rollBack();
             return $this->errorResponse('Saving not found', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
+            \DB::rollBack();
             return $this->errorResponse(
                 'Failed to process approval: ' . $e->getMessage(),
                 500
@@ -352,7 +383,7 @@ class SavingController extends Controller
     {
         try {
             $user = auth()->user();
-            
+
             // User ID to get summary for
             $userId = $request->get('user_id', $user->id);
 
@@ -371,11 +402,11 @@ class SavingController extends Controller
                     'holiday' => Saving::getTotalByType($userId, 'holiday'),
                 ],
                 'transaction_count' => Saving::where('user_id', $userId)
-                    ->where('status', 'approved')
-                    ->count(),
+                ->where('status', 'approved')
+                ->count(),
                 'pending_count' => Saving::where('user_id', $userId)
-                    ->where('status', 'pending')
-                    ->count(),
+                ->where('status', 'pending')
+                ->count(),
             ];
 
             return $this->successResponse(
@@ -383,7 +414,8 @@ class SavingController extends Controller
                 'Savings summary retrieved successfully'
             );
 
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Failed to retrieve summary: ' . $e->getMessage(),
                 500
@@ -402,7 +434,7 @@ class SavingController extends Controller
     {
         try {
             $user = auth()->user();
-            
+
             // Validate type
             if (!in_array($type, ['principal', 'mandatory', 'voluntary', 'holiday'])) {
                 return $this->errorResponse('Invalid savings type', 400);
@@ -415,7 +447,8 @@ class SavingController extends Controller
             // Access Control: Members see only their own
             if ($user->isMember()) {
                 $query->byUser($user->id);
-            } elseif ($request->has('user_id')) {
+            }
+            elseif ($request->has('user_id')) {
                 $query->byUser($request->user_id);
             }
 
@@ -426,7 +459,8 @@ class SavingController extends Controller
                 ucfirst($type) . ' savings retrieved successfully'
             );
 
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Failed to retrieve savings: ' . $e->getMessage(),
                 500

@@ -11,6 +11,7 @@ use App\Models\CashAccount;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Services\AutoJournalService;
 
 class LoanController extends Controller
 {
@@ -34,32 +35,32 @@ class LoanController extends Controller
                 'user_id' => 'required|exists:users,id',
                 'cash_account_id' => 'nullable|exists:cash_accounts,id',
             ]);
-            
+
             $user = User::findOrFail($validated['user_id']);
-            
+
             // Check if user is a member
             if (!$user->isMember()) {
                 return $this->errorResponse('Hanya member yang dapat mengajukan pinjaman', 400);
             }
-            
+
             // Check if user is active
             if ($user->status !== 'active') {
                 return $this->errorResponse('Member tidak aktif', 400);
             }
-            
+
             $response = [
                 'user' => $user->only(['id', 'full_name', 'employee_id', 'email']),
                 'loan_summary' => $user->getLoanSummary(),
                 'available_cash_accounts' => $user->getAvailableCashAccountsForLoan(),
             ];
-            
+
             // If specific cash account is provided, check it
             if (isset($validated['cash_account_id'])) {
                 $cashAccountId = $validated['cash_account_id'];
                 $check = $user->canApplyForLoan($cashAccountId);
-                
+
                 $cashAccount = CashAccount::find($cashAccountId);
-                
+
                 $response['check_result'] = [
                     'cash_account' => $cashAccount ? [
                         'id' => $cashAccount->id,
@@ -71,20 +72,23 @@ class LoanController extends Controller
                     'reason' => $check['reason'],
                 ];
             }
-            
+
             return $this->successResponse(
                 $response,
                 'Eligibility checked successfully'
             );
-            
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('User tidak ditemukan', 404);
-        } catch (\Illuminate\Validation\ValidationException $e) {
+        }
+        catch (\Illuminate\Validation\ValidationException $e) {
             return $this->errorResponse(
                 'Validasi gagal: ' . $e->getMessage(),
                 422
             );
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Gagal memeriksa kelayakan: ' . $e->getMessage(),
                 500
@@ -128,12 +132,13 @@ class LoanController extends Controller
             // Search by user name or loan number
             if ($request->has('search') && ($user->isAdmin() || $user->isManager())) {
                 $search = $request->search;
-                $query->where(function($q) use ($search) {
+                $query->where(function ($q) use ($search) {
                     $q->where('loan_number', 'like', "%{$search}%")
-                      ->orWhereHas('user', function($q2) use ($search) {
-                          $q2->where('full_name', 'like', "%{$search}%")
-                             ->orWhere('employee_id', 'like', "%{$search}%");
-                      });
+                        ->orWhereHas('user', function ($q2) use ($search) {
+                        $q2->where('full_name', 'like', "%{$search}%")
+                            ->orWhere('employee_id', 'like', "%{$search}%");
+                    }
+                    );
                 });
             }
 
@@ -144,16 +149,18 @@ class LoanController extends Controller
 
             // Pagination
             $perPage = $request->get('per_page', 15);
-            
+
             if ($request->has('all') && $request->boolean('all')) {
                 $loans = $query->get();
                 return $this->successResponse($loans, 'Loans retrieved successfully');
-            } else {
+            }
+            else {
                 $loans = $query->paginate($perPage);
                 return $this->paginatedResponse($loans, 'Loans retrieved successfully');
             }
 
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Failed to retrieve loans: ' . $e->getMessage(),
                 500
@@ -207,9 +214,11 @@ class LoanController extends Controller
                 201
             );
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('Cash account not found', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Failed to create loan application: ' . $e->getMessage(),
                 500
@@ -228,9 +237,9 @@ class LoanController extends Controller
                 'user:id,full_name,employee_id,email',
                 'cashAccount:id,code,name',
                 'approvedBy:id,full_name',
-                'installments' => function($q) {
-                    $q->orderBy('installment_number');
-                }
+                'installments' => function ($q) {
+                $q->orderBy('installment_number');
+            }
             ]);
 
             // Access Control: Member only sees own loans
@@ -253,9 +262,11 @@ class LoanController extends Controller
                 'Loan retrieved successfully'
             );
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('Loan not found or access denied', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Failed to retrieve loan: ' . $e->getMessage(),
                 500
@@ -310,9 +321,11 @@ class LoanController extends Controller
                 'Loan updated successfully'
             );
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('Loan not found', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Failed to update loan: ' . $e->getMessage(),
                 500
@@ -343,9 +356,11 @@ class LoanController extends Controller
                 'Loan deleted successfully'
             );
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('Loan not found', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Failed to delete loan: ' . $e->getMessage(),
                 500
@@ -370,6 +385,8 @@ class LoanController extends Controller
                 );
             }
 
+            \DB::beginTransaction();
+
             if ($request->status === 'approved') {
                 // Approve and disburse
                 $loan->update([
@@ -392,8 +409,12 @@ class LoanController extends Controller
                 // Update status to active
                 $loan->update(['status' => 'active']);
 
+                // ✅ NEW: Create auto-journal for loan disbursement
+                AutoJournalService::loanDisbursed($loan, $user->id);
+
                 $message = 'Loan approved and disbursed successfully';
-            } else {
+            }
+            else {
                 // Reject
                 $loan->update([
                     'status' => 'rejected',
@@ -404,6 +425,8 @@ class LoanController extends Controller
                 $message = 'Loan rejected successfully';
             }
 
+            \DB::commit();
+
             $loan->load([
                 'user:id,full_name,employee_id',
                 'cashAccount:id,code,name',
@@ -413,9 +436,13 @@ class LoanController extends Controller
 
             return $this->successResponse($loan, $message);
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            \DB::rollBack();
             return $this->errorResponse('Loan not found', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
+            \DB::rollBack();
             return $this->errorResponse(
                 'Failed to process approval: ' . $e->getMessage(),
                 500
@@ -430,7 +457,7 @@ class LoanController extends Controller
     {
         try {
             $user = auth()->user();
-            
+
             // User ID to get summary for
             $userId = $request->get('user_id', $user->id);
 
@@ -449,9 +476,9 @@ class LoanController extends Controller
                 'user' => $targetUser->only(['id', 'full_name', 'employee_id']),
                 'total_active_loans' => $activeLoans->count(),
                 'total_principal_borrowed' => $activeLoans->sum('principal_amount'),
-                'total_remaining_principal' => $activeLoans->sum(function($loan) {
-                    return $loan->remaining_principal;
-                }),
+                'total_remaining_principal' => $activeLoans->sum(function ($loan) {
+                return $loan->remaining_principal;
+            }),
                 'total_monthly_installment' => $activeLoans->sum('installment_amount'),
                 'loan_history' => [
                     'completed' => Loan::where('user_id', $userId)->where('status', 'paid_off')->count(),
@@ -464,9 +491,11 @@ class LoanController extends Controller
                 'Loan summary retrieved successfully'
             );
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('User not found', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Failed to retrieve summary: ' . $e->getMessage(),
                 500
@@ -516,16 +545,18 @@ class LoanController extends Controller
                 'Loan simulation calculated successfully'
             );
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('Cash account not found', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Failed to calculate simulation: ' . $e->getMessage(),
                 500
             );
         }
     }
-    
+
     /**
      * Process early settlement (pelunasan dipercepat).
      * 
@@ -545,31 +576,33 @@ class LoanController extends Controller
         try {
             $loan = Loan::with(['user', 'installments'])->findOrFail($id);
             $settledBy = auth()->id();
-            
+
             // Process early settlement using model method
             $result = $loan->processEarlySettlement($settledBy, $request->settlement_notes);
-            
+
             // Reload with latest data
             $loan->fresh(['user', 'installments']);
-            
+
             return $this->successResponse(
-                [
-                    'loan' => $loan,
-                    'settlement_summary' => $result
-                ],
+            [
+                'loan' => $loan,
+                'settlement_summary' => $result
+            ],
                 'Pinjaman berhasil dilunasi dipercepat'
             );
-            
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('Pinjaman tidak ditemukan', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Gagal memproses pelunasan: ' . $e->getMessage(),
                 500
             );
         }
     }
-    
+
     /**
      * Get early settlement preview.
      * 
@@ -584,7 +617,7 @@ class LoanController extends Controller
     {
         try {
             $loan = Loan::with(['user', 'installments'])->findOrFail($id);
-            
+
             // Validate loan can be settled
             if (!in_array($loan->status, ['disbursed', 'active'])) {
                 return $this->errorResponse(
@@ -592,23 +625,23 @@ class LoanController extends Controller
                     422
                 );
             }
-            
+
             if ($loan->remaining_principal <= 0) {
                 return $this->errorResponse('Pinjaman sudah lunas', 422);
             }
-            
+
             // Calculate savings
             $paidInstallments = $loan->installments()
                 ->whereIn('status', ['paid', 'auto_paid'])
                 ->get();
-            
+
             $pendingInstallments = $loan->installments()
                 ->whereIn('status', ['pending', 'overdue'])
                 ->get();
-            
+
             $paidInterest = $paidInstallments->sum('interest_amount');
             $pendingInterest = $pendingInstallments->sum('interest_amount');
-            
+
             $preview = [
                 'loan_number' => $loan->loan_number,
                 'original_principal' => $loan->principal_amount,
@@ -620,15 +653,17 @@ class LoanController extends Controller
                 'total_interest_paid' => $paidInterest,
                 'message' => 'Anda hanya perlu membayar sisa pokok tanpa bunga'
             ];
-            
+
             return $this->successResponse(
                 $preview,
                 'Preview pelunasan dipercepat'
             );
-            
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+
+        }
+        catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return $this->errorResponse('Pinjaman tidak ditemukan', 404);
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse(
                 'Gagal menghitung preview: ' . $e->getMessage(),
                 500

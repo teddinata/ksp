@@ -80,9 +80,8 @@ class MemberResignationController extends Controller
             
             // Create resignation using model method
             $resignation = MemberResignation::createRequest(
-                $user->id,
-                $request->reason,
-                $request->resignation_date
+                $user,              // kirim object User, bukan $user->id
+                $request->reason    // hanya 2 parameter
             );
             
             DB::commit();

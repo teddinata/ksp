@@ -327,4 +327,40 @@ class SalaryDeductionController extends Controller
             ], 500);
         }
     }
+
+    /**
+    * Get authenticated member's salary deductions.
+    * 
+    * GET /api/salary-deductions/my-deductions
+    */
+    public function myDeductions(Request $request)
+    {
+        try {
+            $user = auth()->user();
+            
+            $query = SalaryDeduction::with(['processedBy', 'journal'])
+                ->byUser($user->id);
+            
+            // Filter by period
+            if ($request->has('period_month') && $request->has('period_year')) {
+                $query->byPeriod($request->period_month, $request->period_year);
+            } elseif ($request->has('period_year')) {
+                $query->byYear($request->period_year);
+            }
+            
+            $deductions = $query->latest()->paginate(20);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Data potongan gaji Anda berhasil diambil',
+                'data' => $deductions
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal mengambil data: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

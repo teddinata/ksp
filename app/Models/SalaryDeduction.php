@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use App\Services\AutoJournalService;
 
 class SalaryDeduction extends Model
 {
@@ -50,17 +51,17 @@ class SalaryDeduction extends Model
 
     public function user()
     {
-        return $this->belongsTo(User::class, 'user_id');
+        return $this->belongsTo(User::class , 'user_id');
     }
 
     public function processedBy()
     {
-        return $this->belongsTo(User::class, 'processed_by');
+        return $this->belongsTo(User::class , 'processed_by');
     }
 
     public function journal()
     {
-        return $this->belongsTo(Journal::class, 'journal_id');
+        return $this->belongsTo(Journal::class , 'journal_id');
     }
 
     // ==================== SCOPES ====================
@@ -88,7 +89,7 @@ class SalaryDeduction extends Model
     public function scopeByPeriod($query, int $month, int $year)
     {
         return $query->where('period_month', $month)
-                     ->where('period_year', $year);
+            ->where('period_year', $year);
     }
 
     public function scopeByYear($query, int $year)
@@ -100,24 +101,24 @@ class SalaryDeduction extends Model
 
     public function getStatusNameAttribute(): string
     {
-        return match($this->status) {
-            'pending' => 'Menunggu Proses',
-            'processed' => 'Sudah Diproses',
-            'paid' => 'Sudah Dibayar',
-            'cancelled' => 'Dibatalkan',
-            default => $this->status,
-        };
+        return match ($this->status) {
+                'pending' => 'Menunggu Proses',
+                'processed' => 'Sudah Diproses',
+                'paid' => 'Sudah Dibayar',
+                'cancelled' => 'Dibatalkan',
+                default => $this->status,
+            };
     }
 
     public function getStatusColorAttribute(): string
     {
-        return match($this->status) {
-            'pending' => 'warning',
-            'processed' => 'info',
-            'paid' => 'success',
-            'cancelled' => 'danger',
-            default => 'secondary',
-        };
+        return match ($this->status) {
+                'pending' => 'warning',
+                'processed' => 'info',
+                'paid' => 'success',
+                'cancelled' => 'danger',
+                default => 'secondary',
+            };
     }
 
     public function getPeriodDisplayAttribute(): string
@@ -158,35 +159,36 @@ class SalaryDeduction extends Model
         float $grossSalary,
         int $processedBy,
         array $options = []
-    ): self {
+        ): self
+    {
         // Check if already exists
         $existing = self::where('user_id', $member->id)
             ->byPeriod($month, $year)
             ->first();
-            
+
         if ($existing) {
             throw new \Exception('Potongan gaji untuk member ini di periode ini sudah ada');
         }
 
         DB::beginTransaction();
-        
+
         try {
             // Get installments due this period
             $startDate = Carbon::create($year, $month, 1)->startOfMonth();
             $endDate = Carbon::create($year, $month, 1)->endOfMonth();
-            
+
             // Get loans with salary deduction method
             $loansWithSalaryDeduction = Loan::where('user_id', $member->id)
                 ->whereIn('status', ['disbursed', 'active'])
-                ->where(function($q) {
-                    $q->where('deduction_method', 'salary')
-                      ->orWhere('deduction_method', 'mixed');
-                })
+                ->where(function ($q) {
+                $q->where('deduction_method', 'salary')
+                    ->orWhere('deduction_method', 'mixed');
+            })
                 ->get();
-            
+
             $totalLoanDeduction = 0;
             $installmentsPaid = [];
-            
+
             // Process each loan
             foreach ($loansWithSalaryDeduction as $loan) {
                 // Get installments for this period
@@ -195,18 +197,19 @@ class SalaryDeduction extends Model
                     ->whereBetween('due_date', [$startDate, $endDate])
                     ->orderBy('installment_number')
                     ->get();
-                
+
                 foreach ($installments as $installment) {
                     // Calculate deduction amount based on percentage
                     if ($loan->deduction_method === 'salary') {
                         $deductionAmount = $installment->total_amount;
-                    } else { // mixed
+                    }
+                    else { // mixed
                         $percentage = $loan->salary_deduction_percentage / 100;
                         $deductionAmount = $installment->total_amount * $percentage;
                     }
-                    
+
                     $totalLoanDeduction += $deductionAmount;
-                    
+
                     // Mark installment as paid
                     $installment->update([
                         'status' => 'auto_paid',
@@ -215,30 +218,30 @@ class SalaryDeduction extends Model
                         'paid_amount' => $deductionAmount,
                         'notes' => "Dibayar via potong gaji periode {$startDate->format('F Y')}",
                     ]);
-                    
+
                     // Update loan remaining principal
                     $loan->remaining_principal -= $installment->principal_amount;
                     $loan->save();
-                    
+
                     // Check if loan is paid off
                     if ($loan->remaining_principal <= 0) {
                         $loan->update(['status' => 'paid_off']);
                     }
-                    
+
                     $installmentsPaid[] = $installment;
                 }
             }
-            
+
             // Calculate mandatory savings deduction
             $savingsDeduction = $options['savings_deduction'] ?? 0;
-            
+
             // Calculate other deductions
             $otherDeductions = $options['other_deductions'] ?? 0;
-            
+
             // Calculate totals
             $totalDeductions = $totalLoanDeduction + $savingsDeduction + $otherDeductions;
             $netSalary = $grossSalary - $totalDeductions;
-            
+
             // Create salary deduction record
             $salaryDeduction = self::create([
                 'period_month' => $month,
@@ -255,16 +258,47 @@ class SalaryDeduction extends Model
                 'status' => 'processed',
                 'notes' => $options['notes'] ?? null,
             ]);
-            
+
             // TODO: Create journal entry
             // $journal = $salaryDeduction->createJournalEntry();
             // $salaryDeduction->update(['journal_id' => $journal->id]);
-            
+            // ✅ NEW: Create auto-journal
+            // Hitung porsi principal dan interest dari installments yang dibayar
+            $totalPrincipal = 0;
+            $totalInterest = 0;
+
+            foreach ($installmentsPaid as $inst) {
+                $ratio = ($inst->total_amount > 0)
+                    ? $inst->paid_amount / $inst->total_amount
+                    : 1;
+
+                $totalPrincipal += $inst->principal_amount * $ratio;
+                $totalInterest += $inst->interest_amount * $ratio;
+            }
+
+            // Koreksi pembulatan agar principal + interest = loan_deduction
+            $calculatedTotal = round($totalPrincipal + $totalInterest, 2);
+            if ($calculatedTotal > 0 && abs($calculatedTotal - $totalLoanDeduction) > 0.01) {
+                $totalPrincipal = $totalLoanDeduction - $totalInterest;
+            }
+
+            $journal = AutoJournalService::salaryDeductionProcessed(
+                $salaryDeduction,
+                $processedBy,
+                round($totalPrincipal, 2),
+                round($totalInterest, 2)
+            );
+
+            if ($journal) {
+                $salaryDeduction->update(['journal_id' => $journal->id]);
+            }
+
             DB::commit();
-            
+
             return $salaryDeduction;
-            
-        } catch (\Exception $e) {
+
+        }
+        catch (\Exception $e) {
             DB::rollBack();
             throw $e;
         }
@@ -289,9 +323,9 @@ class SalaryDeduction extends Model
                 'total' => $this->total_deductions,
             ],
             'net_salary' => $this->net_salary,
-            'deduction_percentage' => $this->gross_salary > 0 
-                ? round(($this->total_deductions / $this->gross_salary) * 100, 2)
-                : 0,
+            'deduction_percentage' => $this->gross_salary > 0
+            ? round(($this->total_deductions / $this->gross_salary) * 100, 2)
+            : 0,
         ];
     }
 
@@ -301,7 +335,7 @@ class SalaryDeduction extends Model
     public static function getTotalForPeriod(int $month, int $year): array
     {
         $deductions = self::byPeriod($month, $year)->get();
-        
+
         return [
             'member_count' => $deductions->count(),
             'total_gross' => $deductions->sum('gross_salary'),
@@ -322,7 +356,7 @@ class SalaryDeduction extends Model
             ->where('period_year', $year)
             ->orderBy('period_month')
             ->get();
-        
+
         return [
             'year' => $year,
             'months_processed' => $deductions->count(),
@@ -334,14 +368,14 @@ class SalaryDeduction extends Model
             'total_net_salary' => $deductions->sum('net_salary'),
             'average_gross_salary' => $deductions->avg('gross_salary'),
             'average_deduction' => $deductions->avg('total_deductions'),
-            'monthly_details' => $deductions->map(function($d) {
-                return [
+            'monthly_details' => $deductions->map(function ($d) {
+            return [
                     'month' => $d->period_short,
                     'gross' => $d->gross_salary,
                     'deductions' => $d->total_deductions,
                     'net' => $d->net_salary,
                 ];
-            }),
+        }),
         ];
     }
 }

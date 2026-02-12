@@ -9,6 +9,7 @@ use App\Models\Loan;
 use App\Traits\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Services\AutoJournalService;
 
 class InstallmentController extends Controller
 {

@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Carbon\Carbon;
+use App\Services\AutoJournalService;
 
 class Loan extends Model
 {
@@ -33,14 +34,14 @@ class Loan extends Model
         'tenure_months',
         'installment_amount',
         'status',
-        'deduction_method',                         // NEW: none/salary/service_allowance/mixed
-        'salary_deduction_percentage',              // NEW: Percentage for salary deduction
-        'service_allowance_deduction_percentage',   // NEW: Percentage for service allowance deduction
-        'is_early_settlement',                      // NEW: Flag for early settlement
-        'settlement_date',                          // NEW: Date of settlement
-        'settlement_amount',                        // NEW: Amount paid for settlement
-        'settled_by',                               // NEW: Admin who processed settlement
-        'settlement_notes',                         // NEW: Notes about settlement
+        'deduction_method', // NEW: none/salary/service_allowance/mixed
+        'salary_deduction_percentage', // NEW: Percentage for salary deduction
+        'service_allowance_deduction_percentage', // NEW: Percentage for service allowance deduction
+        'is_early_settlement', // NEW: Flag for early settlement
+        'settlement_date', // NEW: Date of settlement
+        'settlement_amount', // NEW: Amount paid for settlement
+        'settled_by', // NEW: Admin who processed settlement
+        'settlement_notes', // NEW: Notes about settlement
         'application_date',
         'approval_date',
         'disbursement_date',
@@ -62,14 +63,14 @@ class Loan extends Model
             'remaining_principal' => 'decimal:2',
             'interest_percentage' => 'decimal:2',
             'installment_amount' => 'decimal:2',
-            'salary_deduction_percentage' => 'decimal:2',               // NEW
-            'service_allowance_deduction_percentage' => 'decimal:2',    // NEW
-            'settlement_amount' => 'decimal:2',                         // NEW
-            'is_early_settlement' => 'boolean',                         // NEW
+            'salary_deduction_percentage' => 'decimal:2', // NEW
+            'service_allowance_deduction_percentage' => 'decimal:2', // NEW
+            'settlement_amount' => 'decimal:2', // NEW
+            'is_early_settlement' => 'boolean', // NEW
             'application_date' => 'date',
             'approval_date' => 'date',
             'disbursement_date' => 'date',
-            'settlement_date' => 'date',                                // NEW
+            'settlement_date' => 'date', // NEW
         ];
     }
 
@@ -78,7 +79,7 @@ class Loan extends Model
      */
     public function user()
     {
-        return $this->belongsTo(User::class, 'user_id');
+        return $this->belongsTo(User::class , 'user_id');
     }
 
     /**
@@ -86,7 +87,7 @@ class Loan extends Model
      */
     public function cashAccount()
     {
-        return $this->belongsTo(CashAccount::class, 'cash_account_id');
+        return $this->belongsTo(CashAccount::class , 'cash_account_id');
     }
 
     /**
@@ -94,7 +95,7 @@ class Loan extends Model
      */
     public function approvedBy()
     {
-        return $this->belongsTo(User::class, 'approved_by');
+        return $this->belongsTo(User::class , 'approved_by');
     }
 
     /**
@@ -102,7 +103,7 @@ class Loan extends Model
      */
     public function installments()
     {
-        return $this->hasMany(Installment::class, 'loan_id');
+        return $this->hasMany(Installment::class , 'loan_id');
     }
 
     /**
@@ -166,15 +167,15 @@ class Loan extends Model
      */
     public function getStatusNameAttribute(): string
     {
-        return match($this->status) {
-            'pending' => 'Menunggu Persetujuan',
-            'approved' => 'Disetujui',
-            'rejected' => 'Ditolak',
-            'disbursed' => 'Sudah Dicairkan',
-            'active' => 'Aktif (Cicilan Berjalan)',
-            'paid_off' => 'Lunas',
-            default => $this->status,
-        };
+        return match ($this->status) {
+                'pending' => 'Menunggu Persetujuan',
+                'approved' => 'Disetujui',
+                'rejected' => 'Ditolak',
+                'disbursed' => 'Sudah Dicairkan',
+                'active' => 'Aktif (Cicilan Berjalan)',
+                'paid_off' => 'Lunas',
+                default => $this->status,
+            };
     }
 
     /**
@@ -182,15 +183,15 @@ class Loan extends Model
      */
     public function getStatusColorAttribute(): string
     {
-        return match($this->status) {
-            'pending' => 'warning',
-            'approved' => 'info',
-            'rejected' => 'danger',
-            'disbursed' => 'primary',
-            'active' => 'success',
-            'paid_off' => 'secondary',
-            default => 'secondary',
-        };
+        return match ($this->status) {
+                'pending' => 'warning',
+                'approved' => 'info',
+                'rejected' => 'danger',
+                'disbursed' => 'primary',
+                'active' => 'success',
+                'paid_off' => 'secondary',
+                default => 'secondary',
+            };
     }
 
     /**
@@ -308,9 +309,9 @@ class Loan extends Model
 
         $monthlyRate = $annualRate / 12 / 100;
         $power = pow(1 + $monthlyRate, $months);
-        
+
         $installment = $principal * ($monthlyRate * $power) / ($power - 1);
-        
+
         return round($installment, 0); // Round to nearest rupiah
     }
 
@@ -321,7 +322,7 @@ class Loan extends Model
     {
         $monthlyRate = $this->interest_percentage / 12 / 100;
         $remainingPrincipal = $this->principal_amount;
-        
+
         for ($i = 1; $i <= $this->tenure_months; $i++) {
             $interestAmount = $remainingPrincipal * $monthlyRate;
             $principalAmount = $this->installment_amount - $interestAmount;
@@ -386,6 +387,10 @@ class Loan extends Model
      * @param string|null $notes
      * @return array Settlement summary
      */
+    /**
+     * Process early settlement.
+     * ✅ UPDATED: Tambah auto-journal
+     */
     public function processEarlySettlement(int $settledBy, ?string $notes = null): array
     {
         if (!$this->isActive()) {
@@ -396,7 +401,7 @@ class Loan extends Model
             throw new \Exception('Pinjaman sudah lunas');
         }
 
-        \DB::transaction(function() use ($settledBy, $notes) {
+        \DB::transaction(function () use ($settledBy, $notes) {
             // Settlement amount = remaining principal only (no interest)
             $settlementAmount = $this->remaining_principal;
 
@@ -404,9 +409,9 @@ class Loan extends Model
             $this->installments()
                 ->whereIn('status', ['pending', 'overdue'])
                 ->update([
-                    'status' => 'cancelled',
-                    'notes' => 'Dibatalkan karena pelunasan dipercepat',
-                ]);
+                'status' => 'cancelled',
+                'notes' => 'Dibatalkan karena pelunasan dipercepat',
+            ]);
 
             // Update loan
             $this->update([
@@ -419,12 +424,15 @@ class Loan extends Model
                 'remaining_principal' => 0,
             ]);
 
+            // ✅ NEW: Create auto-journal for early settlement
+            AutoJournalService::loanEarlySettlement($this, $settledBy);
+
             // Log activity
             ActivityLog::createLog([
                 'activity' => 'early_settlement',
                 'module' => 'loans',
-                'description' => "Pelunasan dipercepat pinjaman {$this->loan_number} sebesar Rp " . 
-                                number_format($settlementAmount, 0, ',', '.'),
+                'description' => "Pelunasan dipercepat pinjaman {$this->loan_number} sebesar Rp " .
+                number_format($settlementAmount, 0, ',', '.'),
             ]);
         });
 
@@ -432,8 +440,8 @@ class Loan extends Model
             'loan_number' => $this->loan_number,
             'original_principal' => $this->principal_amount,
             'settlement_amount' => $this->settlement_amount,
-            'saved_interest' => $this->getTotalInterestAttribute() - 
-                               $this->installments()->whereIn('status', ['paid', 'auto_paid'])->sum('interest_amount'),
+            'saved_interest' => $this->getTotalInterestAttribute() -
+            $this->installments()->whereIn('status', ['paid', 'auto_paid'])->sum('interest_amount'),
             'message' => 'Pelunasan berhasil. Anda hanya membayar sisa pokok tanpa bunga.',
         ];
     }
@@ -443,13 +451,13 @@ class Loan extends Model
      */
     public function getDeductionMethodNameAttribute(): string
     {
-        return match($this->deduction_method) {
-            'none' => 'Bayar Manual',
-            'salary' => 'Potong Gaji',
-            'service_allowance' => 'Potong Jasa Pelayanan',
-            'mixed' => 'Kombinasi (Gaji + Jasa)',
-            default => $this->deduction_method,
-        };
+        return match ($this->deduction_method) {
+                'none' => 'Bayar Manual',
+                'salary' => 'Potong Gaji',
+                'service_allowance' => 'Potong Jasa Pelayanan',
+                'mixed' => 'Kombinasi (Gaji + Jasa)',
+                default => $this->deduction_method,
+            };
     }
 
     /**
