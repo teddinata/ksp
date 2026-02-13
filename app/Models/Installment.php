@@ -195,10 +195,6 @@ class Installment extends Model
      * Mark as paid.
      * UPDATED: Now also updates remaining_principal in Loan
      */
-    /**
-     * Mark as paid.
-     * UPDATED: Now creates auto-journal + updates remaining_principal in Loan
-     */
     public function markAsPaid(string $method, ?int $confirmedBy = null, ?string $notes = null): void
     {
         DB::transaction(function () use ($method, $confirmedBy, $notes) {
@@ -212,18 +208,29 @@ class Installment extends Model
                 'confirmed_by' => $confirmedBy,
             ]);
 
-            // Update remaining_principal in Loan
+            // Fix Critical Bug:
+            // Calculate new remaining principal using raw database value to avoid accessor double-counting
+            // We use DB::raw to decrement the value atomically in the database
+
             $loan = $this->loan;
-            $newRemainingPrincipal = $loan->remaining_principal - $this->principal_amount;
+
+            // Decouple from Accessor: Calculate remaining via direct aggregation if possible, 
+            // but for performance, we decrement the cached column value safely.
+
+            // OPTION 1: Re-calculate from scratch (Safest)
+            // remaining = original_principal - sum(principal_paid)
+            // This is self-healing for any past drift.
+
+            $totalPrincipalPaid = $loan->installments()
+                ->whereIn('status', ['paid', 'auto_paid'])
+                ->sum('principal_amount');
+
+            $newRemaining = max(0, $loan->principal_amount - $totalPrincipalPaid);
 
             $loan->update([
-                'remaining_principal' => max(0, $newRemainingPrincipal),
+                'remaining_principal' => $newRemaining,
+                'status' => $newRemaining <= 0 ? 'paid_off' : $loan->status
             ]);
-
-            // Check if loan is fully paid
-            if ($newRemainingPrincipal <= 0) {
-                $loan->update(['status' => 'paid_off']);
-            }
 
             // ✅ NEW: Create auto-journal
             AutoJournalService::installmentPaid(

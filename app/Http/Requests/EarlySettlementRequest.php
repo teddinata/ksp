@@ -46,22 +46,22 @@ class EarlySettlementRequest extends FormRequest
     public function withValidator($validator)
     {
         $validator->after(function ($validator) {
-            
+
             // Get loan from route parameter
             $loanId = $this->route('id') ?? $this->route('loan');
-            
+
             if (!$loanId) {
                 $validator->errors()->add('loan', 'ID pinjaman tidak ditemukan');
                 return;
             }
-            
-            $loan = Loan::find($loanId);
-            
+
+            $loan = Loan::with('user')->find($loanId);
+
             if (!$loan) {
                 $validator->errors()->add('loan', 'Pinjaman tidak ditemukan');
                 return;
             }
-            
+
             // 1. Loan must be active/disbursed
             if (!in_array($loan->status, ['disbursed', 'active'])) {
                 $validator->errors()->add(
@@ -69,7 +69,7 @@ class EarlySettlementRequest extends FormRequest
                     "Hanya pinjaman dengan status aktif yang dapat dilunasi. Status saat ini: {$loan->status}"
                 );
             }
-            
+
             // 2. Must have remaining principal
             if ($loan->remaining_principal <= 0) {
                 $validator->errors()->add(
@@ -77,7 +77,7 @@ class EarlySettlementRequest extends FormRequest
                     'Pinjaman sudah lunas. Sisa pokok: Rp 0'
                 );
             }
-            
+
             // 3. Cannot settle if already in early settlement
             if ($loan->is_early_settlement) {
                 $validator->errors()->add(
@@ -85,19 +85,19 @@ class EarlySettlementRequest extends FormRequest
                     'Pinjaman ini sudah pernah dilunasi dipercepat'
                 );
             }
-            
+
             // 4. Must have at least one paid installment (optional business rule)
             $paidInstallments = $loan->installments()
                 ->whereIn('status', ['paid', 'auto_paid'])
                 ->count();
-            
+
             if ($paidInstallments === 0) {
                 $validator->errors()->add(
                     'loan',
                     'Pelunasan dipercepat hanya dapat dilakukan setelah minimal 1 kali cicilan dibayar'
                 );
             }
-            
+
             // 5. Validate member is still active
             if ($loan->user && $loan->user->status !== 'active') {
                 $validator->errors()->add(
@@ -115,10 +115,10 @@ class EarlySettlementRequest extends FormRequest
     {
         throw new HttpResponseException(
             response()->json([
-                'success' => false,
-                'message' => 'Anda tidak memiliki akses. Hanya admin dan manager yang dapat memproses pelunasan dipercepat.',
-            ], 403)
-        );
+            'success' => false,
+            'message' => 'Anda tidak memiliki akses. Hanya admin dan manager yang dapat memproses pelunasan dipercepat.',
+        ], 403)
+            );
     }
 
     /**
@@ -128,10 +128,10 @@ class EarlySettlementRequest extends FormRequest
     {
         throw new HttpResponseException(
             response()->json([
-                'success' => false,
-                'message' => 'Validasi gagal',
-                'errors' => $validator->errors()
-            ], 422)
-        );
+            'success' => false,
+            'message' => 'Validasi gagal',
+            'errors' => $validator->errors()
+        ], 422)
+            );
     }
 }

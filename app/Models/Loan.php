@@ -428,12 +428,18 @@ class Loan extends Model
             AutoJournalService::loanEarlySettlement($this, $settledBy);
 
             // Log activity
-            ActivityLog::createLog([
-                'activity' => 'early_settlement',
-                'module' => 'loans',
-                'description' => "Pelunasan dipercepat pinjaman {$this->loan_number} sebesar Rp " .
-                number_format($settlementAmount, 0, ',', '.'),
-            ]);
+            try {
+                ActivityLog::createLog([
+                    'activity' => 'early_settlement',
+                    'module' => 'loans',
+                    'description' => "Pelunasan dipercepat pinjaman {$this->loan_number} sebesar Rp " .
+                    number_format($settlementAmount, 0, ',', '.'),
+                    'user_id' => $settledBy, // Explicitly pass user_id
+                ]);
+            }
+            catch (\Exception $e) {
+            // Ignore log failures
+            }
         });
 
         return [
