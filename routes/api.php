@@ -220,6 +220,22 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
             // Approval
             Route::post('/{id}/approve', [App\Http\Controllers\Api\SavingController::class , 'approve'])
                 ->middleware('role:admin,manager');
+
+            // Download template
+            Route::get('/import/template', [SavingController::class, 'downloadTemplate'])
+                ->middleware('role:admin,manager')
+                ->name('savings.import.template');
+            
+            // Import from Excel
+            Route::post('/import', [SavingController::class, 'importExcel'])
+                ->middleware('role:admin,manager')
+                ->name('savings.import');
+            
+            // Export to Excel
+            Route::get('/export', [SavingController::class, 'exportExcel'])
+                ->middleware('role:admin,manager')
+                ->name('savings.export');
+
         }
         );
     });
@@ -267,8 +283,23 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
             // Installments for specific loan
             Route::get('/{loanId}/installments', [App\Http\Controllers\Api\InstallmentController::class , 'index']);
             Route::get('/{loanId}/schedule', [App\Http\Controllers\Api\InstallmentController::class , 'schedule']);
-        }
-        );
+
+            // Download template
+            Route::get('/import/template', [LoanController::class, 'downloadTemplate'])
+                ->middleware('role:admin,manager')
+                ->name('loans.import.template');
+            
+            // Import from Excel
+            Route::post('/import', [LoanController::class, 'importExcel'])
+                ->middleware('role:admin,manager')
+                ->name('loans.import');
+            
+            // Export to Excel
+            Route::get('/export', [LoanController::class, 'exportExcel'])
+                ->middleware('role:admin,manager')
+                ->name('loans.export');
+
+        });
 
         // Installments
         Route::prefix('installments')->group(function () {
