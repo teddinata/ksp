@@ -71,12 +71,14 @@ class SavingController extends Controller
             if ($request->has('all') && $request->boolean('all')) {
                 $savings = $query->get();
                 return $this->successResponse($savings, 'Savings retrieved successfully');
-            } else {
+            }
+            else {
                 $savings = $query->paginate($perPage);
                 return $this->paginatedResponse($savings, 'Savings retrieved successfully');
             }
 
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse('Failed to retrieve savings: ' . $e->getMessage(), 500);
         }
     }
@@ -87,18 +89,34 @@ class SavingController extends Controller
             $user = auth()->user();
 
             $cashAccount = CashAccount::findOrFail($request->cash_account_id);
-            
+
             // ✅ FIX: Use ->first()
             $interestRate = $cashAccount->currentSavingsRate()->first();
             $interestPercentage = $interestRate ? $interestRate->rate_percentage : 0;
 
             $finalAmount = Saving::calculateFinalAmount($request->amount, $interestPercentage);
 
+            // Determine saving_type_id
+            $savingTypeId = $request->saving_type_id;
+            if (!$savingTypeId && $request->savings_type) {
+                $typeMapping = [
+                    'principal' => 'POKOK',
+                    'mandatory' => 'WAJIB',
+                    'voluntary' => 'SUKARELA',
+                    'holiday' => 'HARIRAYA',
+                ];
+                if (isset($typeMapping[$request->savings_type])) {
+                    $savingType = \App\Models\SavingType::where('code', $typeMapping[$request->savings_type])->first();
+                    $savingTypeId = $savingType ? $savingType->id : null;
+                }
+            }
+
             DB::beginTransaction();
 
             $saving = Saving::create([
                 'user_id' => $request->user_id,
                 'cash_account_id' => $request->cash_account_id,
+                'saving_type_id' => $savingTypeId, // New field
                 'savings_type' => $request->savings_type,
                 'amount' => $request->amount,
                 'interest_percentage' => $interestPercentage,
@@ -119,7 +137,8 @@ class SavingController extends Controller
 
             return $this->successResponse($saving, 'Saving transaction created successfully', 201);
 
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             DB::rollBack();
             return $this->errorResponse('Failed to create saving: ' . $e->getMessage(), 500);
         }
@@ -139,7 +158,8 @@ class SavingController extends Controller
 
             return $this->successResponse($saving, 'Saving retrieved successfully');
 
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse('Failed to retrieve saving: ' . $e->getMessage(), 500);
         }
     }
@@ -159,9 +179,28 @@ class SavingController extends Controller
 
             $finalAmount = Saving::calculateFinalAmount($request->amount, $interestPercentage);
 
+            // Determine saving_type_id if changing type
+            $savingTypeId = $saving->saving_type_id;
+            if ($request->has('saving_type_id')) {
+                $savingTypeId = $request->saving_type_id;
+            }
+            elseif ($request->has('savings_type')) {
+                $typeMapping = [
+                    'principal' => 'POKOK',
+                    'mandatory' => 'WAJIB',
+                    'voluntary' => 'SUKARELA',
+                    'holiday' => 'HARIRAYA',
+                ];
+                if (isset($typeMapping[$request->savings_type])) {
+                    $savingType = \App\Models\SavingType::where('code', $typeMapping[$request->savings_type])->first();
+                    $savingTypeId = $savingType ? $savingType->id : $savingTypeId;
+                }
+            }
+
             $saving->update([
                 'user_id' => $request->user_id,
                 'cash_account_id' => $request->cash_account_id,
+                'saving_type_id' => $savingTypeId,
                 'savings_type' => $request->savings_type,
                 'amount' => $request->amount,
                 'interest_percentage' => $interestPercentage,
@@ -174,7 +213,8 @@ class SavingController extends Controller
 
             return $this->successResponse($saving, 'Saving updated successfully');
 
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse('Failed to update saving: ' . $e->getMessage(), 500);
         }
     }
@@ -192,7 +232,8 @@ class SavingController extends Controller
 
             return $this->successResponse(null, 'Saving deleted successfully');
 
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse('Failed to delete saving: ' . $e->getMessage(), 500);
         }
     }
@@ -232,7 +273,8 @@ class SavingController extends Controller
 
             return $this->successResponse($saving, $message);
 
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             DB::rollBack();
             return $this->errorResponse('Failed to process approval: ' . $e->getMessage(), 500);
         }
@@ -263,7 +305,8 @@ class SavingController extends Controller
 
             return $this->successResponse($summary, 'Savings summary retrieved successfully');
 
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse('Failed to retrieve summary: ' . $e->getMessage(), 500);
         }
     }
@@ -283,7 +326,8 @@ class SavingController extends Controller
 
             if ($user->isMember()) {
                 $query->byUser($user->id);
-            } elseif ($request->has('user_id')) {
+            }
+            elseif ($request->has('user_id')) {
                 $query->byUser($request->user_id);
             }
 
@@ -291,7 +335,8 @@ class SavingController extends Controller
 
             return $this->successResponse($savings, ucfirst($type) . ' savings retrieved successfully');
 
-        } catch (\Exception $e) {
+        }
+        catch (\Exception $e) {
             return $this->errorResponse('Failed to retrieve savings: ' . $e->getMessage(), 500);
         }
     }
@@ -304,7 +349,7 @@ class SavingController extends Controller
             $spreadsheet = new Spreadsheet();
             $sheet = $spreadsheet->getActiveSheet();
             $sheet->setTitle('Template Simpanan');
-            
+
             // Header
             $sheet->setCellValue('A1', 'TEMPLATE IMPORT SIMPANAN');
             $sheet->mergeCells('A1:G1');
@@ -313,12 +358,12 @@ class SavingController extends Controller
             $sheet->getStyle('A1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('70AD47');
             $sheet->getStyle('A1')->getFont()->getColor()->setRGB('FFFFFF');
             $sheet->getRowDimension('1')->setRowHeight(30);
-            
+
             // Instructions
             $sheet->setCellValue('A3', '📋 PETUNJUK PENGISIAN:');
             $sheet->getStyle('A3')->getFont()->setBold(true)->setSize(12);
             $sheet->getStyle('A3')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FFD966');
-            
+
             $instructions = [
                 ['No', 'Instruksi'],
                 ['1', 'Isi data mulai dari baris 13 (hapus contoh data terlebih dahulu)'],
@@ -329,7 +374,7 @@ class SavingController extends Controller
                 ['6', 'Tanggal: Format YYYY-MM-DD (contoh: 2026-02-17)'],
                 ['7', 'Catatan: Opsional, bisa dikosongkan'],
             ];
-            
+
             $row = 4;
             foreach ($instructions as $instruction) {
                 $sheet->setCellValue('A' . $row, $instruction[0]);
@@ -339,17 +384,17 @@ class SavingController extends Controller
                 }
                 $row++;
             }
-            
+
             $sheet->getStyle('A4:B' . ($row - 1))->applyFromArray([
                 'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '000000']]],
             ]);
-            
+
             // Type examples
             $sheet->setCellValue('D3', '📝 JENIS SIMPANAN:');
             $sheet->getStyle('D3')->getFont()->setBold(true)->setSize(11);
             $sheet->getStyle('D3')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('C6E0B4');
             $sheet->mergeCells('D3:E3');
-            
+
             $typeExamples = [
                 ['Kode', 'Keterangan'],
                 ['principal', 'Simpanan Pokok (sekali, saat daftar)'],
@@ -357,27 +402,27 @@ class SavingController extends Controller
                 ['voluntary', 'Simpanan Sukarela (kapan saja)'],
                 ['holiday', 'Simpanan Hari Raya (menjelang hari raya)'],
             ];
-            
+
             $row = 4;
             foreach ($typeExamples as $example) {
                 $sheet->setCellValue('D' . $row, $example[0]);
                 $sheet->setCellValue('E' . $row, $example[1]);
-                
+
                 if ($example[0] === 'Kode') {
                     $sheet->getStyle('D' . $row . ':E' . $row)->getFont()->setBold(true);
                 }
-                
+
                 $row++;
             }
-            
+
             $sheet->getStyle('D4:E' . ($row - 1))->applyFromArray([
                 'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '000000']]],
             ]);
-            
+
             // Column Headers
             $headerRow = 12;
             $headers = ['ID Member', 'ID Kas', 'Jenis Simpanan', 'Nominal', 'Tanggal Transaksi', 'Catatan', 'Status'];
-            
+
             $column = 'A';
             foreach ($headers as $header) {
                 $sheet->setCellValue($column . $headerRow, $header);
@@ -387,14 +432,14 @@ class SavingController extends Controller
                 $sheet->getStyle($column . $headerRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
                 $column++;
             }
-            
+
             // Sample Data
             $sampleData = [
                 [1, 2, 'principal', 100000, '2026-02-17', 'Simpanan pokok awal', ''],
                 [2, 2, 'mandatory', 50000, '2026-02-17', 'Simpanan wajib Februari', ''],
                 [3, 2, 'voluntary', 200000, '2026-02-17', '', ''],
             ];
-            
+
             $row = 13;
             foreach ($sampleData as $data) {
                 $column = 'A';
@@ -405,7 +450,7 @@ class SavingController extends Controller
                 $sheet->getStyle('A' . $row . ':G' . $row)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('E7E6E6');
                 $row++;
             }
-            
+
             // Formatting
             $sheet->getColumnDimension('A')->setWidth(12);
             $sheet->getColumnDimension('B')->setWidth(10);
@@ -414,22 +459,22 @@ class SavingController extends Controller
             $sheet->getColumnDimension('E')->setWidth(18);
             $sheet->getColumnDimension('F')->setWidth(35);
             $sheet->getColumnDimension('G')->setWidth(15);
-            
+
             $sheet->getStyle('A' . $headerRow . ':G' . ($row - 1))->applyFromArray([
                 'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '000000']]],
             ]);
-            
+
             // Member Sheet
             $memberSheet = $spreadsheet->createSheet();
             $memberSheet->setTitle('Daftar Member');
-            
+
             $memberSheet->setCellValue('A1', 'DAFTAR MEMBER AKTIF');
             $memberSheet->mergeCells('A1:D1');
             $memberSheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
             $memberSheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $memberSheet->getStyle('A1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('70AD47');
             $memberSheet->getStyle('A1')->getFont()->getColor()->setRGB('FFFFFF');
-            
+
             $memberHeaders = ['ID', 'NIP/Employee ID', 'Nama Lengkap', 'Status'];
             $column = 'A';
             foreach ($memberHeaders as $header) {
@@ -438,43 +483,43 @@ class SavingController extends Controller
                 $memberSheet->getStyle($column . '2')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('A9D08E');
                 $column++;
             }
-            
+
             $members = User::members()->where('status', 'active')->orderBy('employee_id')->get(['id', 'employee_id', 'full_name', 'status']);
-            
+
             $row = 3;
             foreach ($members as $member) {
                 $memberSheet->setCellValue('A' . $row, $member->id);
                 $memberSheet->setCellValue('B' . $row, $member->employee_id);
                 $memberSheet->setCellValue('C' . $row, $member->full_name);
                 $memberSheet->setCellValue('D' . $row, $member->status);
-                
+
                 if ($row % 2 == 0) {
                     $memberSheet->getStyle('A' . $row . ':D' . $row)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F2F2F2');
                 }
-                
+
                 $row++;
             }
-            
+
             $memberSheet->getStyle('A2:D' . ($row - 1))->applyFromArray([
                 'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '000000']]],
             ]);
-            
+
             $memberSheet->getColumnDimension('A')->setWidth(10);
             $memberSheet->getColumnDimension('B')->setWidth(20);
             $memberSheet->getColumnDimension('C')->setWidth(35);
             $memberSheet->getColumnDimension('D')->setWidth(15);
-            
+
             // Cash Account Sheet
             $cashSheet = $spreadsheet->createSheet();
             $cashSheet->setTitle('Daftar Kas');
-            
+
             $cashSheet->setCellValue('A1', 'DAFTAR KAS SIMPANAN');
             $cashSheet->mergeCells('A1:D1');
             $cashSheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
             $cashSheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
             $cashSheet->getStyle('A1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('5B9BD5');
             $cashSheet->getStyle('A1')->getFont()->getColor()->setRGB('FFFFFF');
-            
+
             $cashHeaders = ['ID', 'Kode', 'Nama Kas', 'Tipe'];
             $column = 'A';
             foreach ($cashHeaders as $header) {
@@ -483,48 +528,49 @@ class SavingController extends Controller
                 $cashSheet->getStyle($column . '2')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('9BC2E6');
                 $column++;
             }
-            
+
             $cashAccounts = CashAccount::where('type', 'KAS-II')->orderBy('code')->get(['id', 'code', 'name', 'type']);
-            
+
             $row = 3;
             foreach ($cashAccounts as $cash) {
                 $cashSheet->setCellValue('A' . $row, $cash->id);
                 $cashSheet->setCellValue('B' . $row, $cash->code);
                 $cashSheet->setCellValue('C' . $row, $cash->name);
                 $cashSheet->setCellValue('D' . $row, $cash->type);
-                
+
                 if ($row % 2 == 0) {
                     $cashSheet->getStyle('A' . $row . ':D' . $row)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('F2F2F2');
                 }
-                
+
                 $row++;
             }
-            
+
             $cashSheet->getStyle('A2:D' . ($row - 1))->applyFromArray([
                 'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '000000']]],
             ]);
-            
+
             $cashSheet->getColumnDimension('A')->setWidth(10);
             $cashSheet->getColumnDimension('B')->setWidth(15);
             $cashSheet->getColumnDimension('C')->setWidth(30);
             $cashSheet->getColumnDimension('D')->setWidth(15);
-            
+
             $spreadsheet->setActiveSheetIndex(0);
-            
+
             // Save
             $filename = 'Template_Simpanan_' . date('Y-m-d') . '.xlsx';
             $filepath = storage_path('app/temp/' . $filename);
-            
+
             if (!file_exists(storage_path('app/temp'))) {
                 mkdir(storage_path('app/temp'), 0755, true);
             }
-            
+
             $writer = new Xlsx($spreadsheet);
             $writer->save($filepath);
-            
+
             return response()->download($filepath, $filename)->deleteFileAfterSend(true);
-            
-        } catch (\Exception $e) {
+
+        }
+        catch (\Exception $e) {
             \Log::error('Template download error', ['error' => $e->getMessage()]);
             abort(500, 'Gagal membuat template: ' . $e->getMessage());
         }
@@ -536,21 +582,21 @@ class SavingController extends Controller
             $request->validate([
                 'file' => 'required|file|mimes:xlsx,xls|max:5120',
             ]);
-            
+
             $file = $request->file('file');
             $spreadsheet = IOFactory::load($file->getPathname());
             $sheet = $spreadsheet->getActiveSheet();
-            
+
             $highestRow = $sheet->getHighestRow();
-            
+
             if ($highestRow < 13) {
                 return $this->errorResponse('File Excel tidak memiliki data', 400);
             }
-            
+
             $errors = [];
             $validData = [];
             $approvedBy = auth()->id();
-            
+
             for ($row = 13; $row <= $highestRow; $row++) {
                 $userId = $sheet->getCell('A' . $row)->getValue();
                 $cashAccountId = $sheet->getCell('B' . $row)->getValue();
@@ -558,11 +604,11 @@ class SavingController extends Controller
                 $amount = $sheet->getCell('D' . $row)->getValue();
                 $transactionDate = $sheet->getCell('E' . $row)->getValue();
                 $notes = $sheet->getCell('F' . $row)->getValue();
-                
+
                 if (empty($userId) && empty($amount)) {
                     continue;
                 }
-                
+
                 $rowData = [
                     'row' => $row,
                     'user_id' => $userId,
@@ -572,39 +618,40 @@ class SavingController extends Controller
                     'transaction_date' => $transactionDate,
                     'notes' => $notes,
                 ];
-                
+
                 $validation = $this->validateSavingRow($rowData, $row);
-                
+
                 if (!$validation['valid']) {
                     $errors[] = $validation['errors'];
-                } else {
+                }
+                else {
                     $validData[] = $validation['data'];
                 }
             }
-            
+
             if (!empty($errors)) {
                 return $this->errorResponse('Validasi gagal', 422, ['errors' => $errors]);
             }
-            
+
             if (empty($validData)) {
                 return $this->errorResponse('Tidak ada data valid', 400);
             }
-            
+
             DB::beginTransaction();
-            
+
             try {
                 $results = ['success' => [], 'failed' => []];
-                
+
                 foreach ($validData as $data) {
                     try {
                         $user = User::find($data['user_id']);
                         $cashAccount = CashAccount::find($data['cash_account_id']);
-                        
+
                         $interestRate = $cashAccount->currentSavingsRate()->first();
                         $interestPercentage = $interestRate ? $interestRate->rate_percentage : 0;
-                        
+
                         $finalAmount = Saving::calculateFinalAmount($data['amount'], $interestPercentage);
-                        
+
                         $saving = Saving::create([
                             'user_id' => $data['user_id'],
                             'cash_account_id' => $data['cash_account_id'],
@@ -617,41 +664,44 @@ class SavingController extends Controller
                             'notes' => $data['notes'],
                             'approved_by' => $approvedBy,
                         ]);
-                        
+
                         $cashAccount->updateBalance($data['amount'], 'add');
-                        
+
                         AutoJournalService::savingApproved($saving, $approvedBy);
-                        
+
                         $results['success'][] = [
                             'row' => $data['row'],
                             'member' => $user->full_name,
                             'type' => $data['savings_type'],
                             'amount' => $data['amount'],
                         ];
-                        
-                    } catch (\Exception $e) {
+
+                    }
+                    catch (\Exception $e) {
                         $results['failed'][] = [
                             'row' => $data['row'],
                             'error' => $e->getMessage(),
                         ];
                     }
                 }
-                
+
                 DB::commit();
-                
+
                 return $this->successResponse([
                     'total_processed' => count($validData),
                     'success_count' => count($results['success']),
                     'failed_count' => count($results['failed']),
                     'results' => $results,
                 ], 'Import selesai');
-                
-            } catch (\Exception $e) {
+
+            }
+            catch (\Exception $e) {
                 DB::rollBack();
                 throw $e;
             }
-            
-        } catch (\Exception $e) {
+
+        }
+        catch (\Exception $e) {
             return $this->errorResponse('Gagal import: ' . $e->getMessage(), 500);
         }
     }
@@ -659,60 +709,70 @@ class SavingController extends Controller
     private function validateSavingRow(array $rowData, int $rowNumber): array
     {
         $errors = [];
-        
+
         if (empty($rowData['user_id'])) {
             $errors[] = "ID Member tidak boleh kosong";
-        } else {
+        }
+        else {
             $user = User::find($rowData['user_id']);
             if (!$user) {
                 $errors[] = "ID Member tidak ditemukan";
-            } elseif (!$user->isMember()) {
+            }
+            elseif (!$user->isMember()) {
                 $errors[] = "User bukan member";
-            } elseif ($user->status !== 'active') {
+            }
+            elseif ($user->status !== 'active') {
                 $errors[] = "Member tidak aktif";
             }
         }
-        
+
         if (empty($rowData['cash_account_id'])) {
             $errors[] = "ID Kas tidak boleh kosong";
-        } else {
+        }
+        else {
             $cashAccount = CashAccount::find($rowData['cash_account_id']);
             if (!$cashAccount) {
                 $errors[] = "ID Kas tidak ditemukan";
-            } elseif ($cashAccount->type !== 'KAS-II') {
+            }
+            elseif ($cashAccount->type !== 'KAS-II') {
                 $errors[] = "Kas harus KAS-II (Simpanan)";
             }
         }
-        
+
         if (empty($rowData['savings_type'])) {
             $errors[] = "Jenis simpanan tidak boleh kosong";
-        } elseif (!in_array($rowData['savings_type'], ['principal', 'mandatory', 'voluntary', 'holiday'])) {
+        }
+        elseif (!in_array($rowData['savings_type'], ['principal', 'mandatory', 'voluntary', 'holiday'])) {
             $errors[] = "Jenis simpanan tidak valid. Harus: principal, mandatory, voluntary, atau holiday";
         }
-        
+
         $amount = str_replace(['.', ',', ' ', 'Rp'], '', $rowData['amount']);
         if (empty($amount)) {
             $errors[] = "Nominal tidak boleh kosong";
-        } elseif (!is_numeric($amount)) {
+        }
+        elseif (!is_numeric($amount)) {
             $errors[] = "Nominal harus berupa angka";
-        } elseif ($amount < 10000) {
+        }
+        elseif ($amount < 10000) {
             $errors[] = "Nominal minimal Rp 10.000";
         }
-        
+
         if (empty($rowData['transaction_date'])) {
             $errors[] = "Tanggal transaksi tidak boleh kosong";
-        } else {
+        }
+        else {
             try {
                 $date = \Carbon\Carbon::parse($rowData['transaction_date']);
-            } catch (\Exception $e) {
+            }
+            catch (\Exception $e) {
                 $errors[] = "Format tanggal tidak valid";
             }
         }
-        
+
         if (!empty($errors)) {
             return ['valid' => false, 'errors' => ['row' => $rowNumber, 'messages' => $errors]];
         }
-        
+
         return [
             'valid' => true,
             'data' => [
@@ -720,7 +780,7 @@ class SavingController extends Controller
                 'user_id' => $rowData['user_id'],
                 'cash_account_id' => $rowData['cash_account_id'],
                 'savings_type' => $rowData['savings_type'],
-                'amount' => (float) $amount,
+                'amount' => (float)$amount,
                 'transaction_date' => \Carbon\Carbon::parse($rowData['transaction_date'])->format('Y-m-d'),
                 'notes' => $rowData['notes'],
             ],
@@ -731,75 +791,77 @@ class SavingController extends Controller
     {
         try {
             $query = Saving::with(['user:id,full_name,employee_id', 'cashAccount:id,code,name']);
-            
+
             if ($request->has('savings_type')) {
                 $query->byType($request->savings_type);
                 $typeLabel = ucfirst($request->savings_type);
-            } else {
+            }
+            else {
                 $typeLabel = "Semua Jenis";
             }
-            
+
             if ($request->has('user_id')) {
                 $query->byUser($request->user_id);
             }
-            
+
             if ($request->has('cash_account_id')) {
                 $query->byCashAccount($request->cash_account_id);
             }
-            
+
             if ($request->has('start_date') && $request->has('end_date')) {
                 $query->dateRange($request->start_date, $request->end_date);
                 $periodLabel = $request->start_date . ' s/d ' . $request->end_date;
-            } else {
+            }
+            else {
                 $periodLabel = "Semua Periode";
             }
-            
+
             $savings = $query->orderBy('transaction_date', 'desc')->get();
-            
+
             if ($savings->isEmpty()) {
                 abort(404, 'Tidak ada data untuk diekspor');
             }
-            
+
             $spreadsheet = new Spreadsheet();
             $sheet = $spreadsheet->getActiveSheet();
             $sheet->setTitle('Data Simpanan');
-            
+
             // Header
             $sheet->setCellValue('A1', 'LAPORAN DATA SIMPANAN');
             $sheet->mergeCells('A1:H1');
             $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(14);
             $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-            
+
             $sheet->setCellValue('A2', 'Jenis: ' . $typeLabel);
             $sheet->mergeCells('A2:H2');
             $sheet->getStyle('A2')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-            
+
             $sheet->setCellValue('A3', 'Periode: ' . $periodLabel);
             $sheet->mergeCells('A3:H3');
             $sheet->getStyle('A3')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-            
+
             $sheet->setCellValue('A4', 'Dicetak: ' . now()->format('d F Y H:i'));
             $sheet->mergeCells('A4:H4');
             $sheet->getStyle('A4')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-            
+
             // Summary
             $totalAmount = $savings->sum('amount');
             $totalFinal = $savings->sum('final_amount');
-            
+
             $sheet->setCellValue('A6', 'RINGKASAN:');
             $sheet->getStyle('A6')->getFont()->setBold(true);
-            
+
             $sheet->setCellValue('A7', 'Total Transaksi:');
             $sheet->setCellValue('B7', $savings->count());
-            
+
             $sheet->setCellValue('A8', 'Total Nominal:');
             $sheet->setCellValue('B8', $totalAmount);
             $sheet->getStyle('B8')->getNumberFormat()->setFormatCode('#,##0');
-            
+
             $sheet->setCellValue('A9', 'Total dengan Bunga:');
             $sheet->setCellValue('B9', $totalFinal);
             $sheet->getStyle('B9')->getNumberFormat()->setFormatCode('#,##0');
-            
+
             // Column headers
             $headers = ['No', 'Tanggal', 'NIP', 'Nama', 'Jenis', 'Kas', 'Nominal', 'Status'];
             $column = 'A';
@@ -811,7 +873,7 @@ class SavingController extends Controller
                 $sheet->getStyle($column . '11')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
                 $column++;
             }
-            
+
             // Data rows
             $row = 12;
             $no = 1;
@@ -824,13 +886,13 @@ class SavingController extends Controller
                 $sheet->setCellValue('F' . $row, $saving->cashAccount->code ?? 'N/A');
                 $sheet->setCellValue('G' . $row, $saving->amount);
                 $sheet->setCellValue('H' . $row, $saving->status_name);
-                
+
                 $sheet->getStyle('G' . $row)->getNumberFormat()->setFormatCode('#,##0');
                 $sheet->getStyle('A' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-                
+
                 $row++;
             }
-            
+
             // Column widths
             $sheet->getColumnDimension('A')->setWidth(6);
             $sheet->getColumnDimension('B')->setWidth(12);
@@ -840,23 +902,24 @@ class SavingController extends Controller
             $sheet->getColumnDimension('F')->setWidth(12);
             $sheet->getColumnDimension('G')->setWidth(15);
             $sheet->getColumnDimension('H')->setWidth(15);
-            
+
             // Borders
             $lastRow = $row - 1;
             $sheet->getStyle('A11:H' . $lastRow)->applyFromArray([
                 'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => '000000']]],
             ]);
-            
+
             // Save
             $filename = 'Simpanan_' . $typeLabel . '_' . date('Y-m-d') . '.xlsx';
             $filepath = storage_path('app/temp/' . $filename);
-            
+
             $writer = new Xlsx($spreadsheet);
             $writer->save($filepath);
-            
+
             return response()->download($filepath, $filename)->deleteFileAfterSend(true);
-            
-        } catch (\Exception $e) {
+
+        }
+        catch (\Exception $e) {
             \Log::error('Export error', ['error' => $e->getMessage()]);
             abort(500, 'Gagal export: ' . $e->getMessage());
         }

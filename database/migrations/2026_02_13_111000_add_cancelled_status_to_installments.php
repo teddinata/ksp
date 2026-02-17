@@ -11,9 +11,10 @@ return new class extends Migration {
      */
     public function up(): void
     {
-        // Add 'cancelled' to the enum
-        // Note: DB::statement is required for changing ENUM columns in MySQL efficiently without Doctrine DBAL issues sometimes
-        DB::statement("ALTER TABLE installments MODIFY COLUMN status ENUM('pending', 'auto_paid', 'manual_pending', 'paid', 'overdue', 'cancelled') DEFAULT 'pending'");
+        // Add 'cancelled' to the enum (MySQL only, skip for SQLite)
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE installments MODIFY COLUMN status ENUM('pending', 'auto_paid', 'manual_pending', 'paid', 'overdue', 'cancelled') DEFAULT 'pending'");
+        }
     }
 
     /**
@@ -21,9 +22,9 @@ return new class extends Migration {
      */
     public function down(): void
     {
-        // Revert to original enum
-        // Note: Be careful if there are 'cancelled' rows, they might be truncated or cause error.
-        // For localized testing/rollback we can try to revert.
-        DB::statement("ALTER TABLE installments MODIFY COLUMN status ENUM('pending', 'auto_paid', 'manual_pending', 'paid', 'overdue') DEFAULT 'pending'");
+        // Revert to original enum (MySQL only, skip for SQLite)
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE installments MODIFY COLUMN status ENUM('pending', 'auto_paid', 'manual_pending', 'paid', 'overdue') DEFAULT 'pending'");
+        }
     }
 };
