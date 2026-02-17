@@ -222,17 +222,17 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
                 ->middleware('role:admin,manager');
 
             // Download template
-            Route::get('/import/template', [SavingController::class, 'downloadTemplate'])
+            Route::get('/import/template', [App\Http\Controllers\Api\SavingController::class, 'downloadTemplate'])
                 ->middleware('role:admin,manager')
                 ->name('savings.import.template');
             
             // Import from Excel
-            Route::post('/import', [SavingController::class, 'importExcel'])
+            Route::post('/import', [App\Http\Controllers\Api\SavingController::class, 'importExcel'])
                 ->middleware('role:admin,manager')
                 ->name('savings.import');
             
             // Export to Excel
-            Route::get('/export', [SavingController::class, 'exportExcel'])
+            Route::get('/export', [App\Http\Controllers\Api\SavingController::class, 'exportExcel'])
                 ->middleware('role:admin,manager')
                 ->name('savings.export');
 
@@ -285,17 +285,17 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
             Route::get('/{loanId}/schedule', [App\Http\Controllers\Api\InstallmentController::class , 'schedule']);
 
             // Download template
-            Route::get('/import/template', [LoanController::class, 'downloadTemplate'])
+            Route::get('/import/template', [App\Http\Controllers\Api\LoanController::class, 'downloadTemplate'])
                 ->middleware('role:admin,manager')
                 ->name('loans.import.template');
             
             // Import from Excel
-            Route::post('/import', [LoanController::class, 'importExcel'])
+            Route::post('/import', [App\Http\Controllers\Api\LoanController::class, 'importExcel'])
                 ->middleware('role:admin,manager')
                 ->name('loans.import');
             
             // Export to Excel
-            Route::get('/export', [LoanController::class, 'exportExcel'])
+            Route::get('/export', [App\Http\Controllers\Api\LoanController::class, 'exportExcel'])
                 ->middleware('role:admin,manager')
                 ->name('loans.export');
 
