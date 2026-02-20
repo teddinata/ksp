@@ -565,22 +565,31 @@ class MemberController extends Controller
             // ✅ Auto-generate employee_id based on role if not provided
             if (!isset($validated['employee_id'])) {
                 $validated['employee_id'] = match($requestedRole) {
-                    'admin' => 'ADM' . str_pad(
-                        User::where('role', 'admin')->count() + 1, 
-                        4, 
-                        '0', 
+                    'admin' => 'ADM' . now()->format('Ymd') . str_pad(
+                        User::where('role', 'admin')
+                            ->whereDate('created_at', today())
+                            ->where('employee_id', 'like', 'ADM' . now()->format('Ymd') . '%')
+                            ->count() + 1,
+                        3,
+                        '0',
                         STR_PAD_LEFT
                     ),
-                    'manager' => 'MGR' . str_pad(
-                        User::where('role', 'manager')->count() + 1, 
-                        4, 
-                        '0', 
+                    'manager' => 'MGR' . now()->format('Ymd') . str_pad(
+                        User::where('role', 'manager')
+                            ->whereDate('created_at', today())
+                            ->where('employee_id', 'like', 'MGR' . now()->format('Ymd') . '%')
+                            ->count() + 1,
+                        3,
+                        '0',
                         STR_PAD_LEFT
                     ),
-                    default => 'EMP' . str_pad(
-                        User::members()->count() + 1, 
-                        6, 
-                        '0', 
+                    default => 'EMP' . now()->format('Ymd') . str_pad(
+                        User::members()
+                            ->whereDate('created_at', today())
+                            ->where('employee_id', 'like', 'EMP' . now()->format('Ymd') . '%')
+                            ->count() + 1,
+                        3,
+                        '0',
                         STR_PAD_LEFT
                     ),
                 };
