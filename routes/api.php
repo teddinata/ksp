@@ -203,6 +203,16 @@ Route::middleware(['jwt.auth'])->group(function () {
 Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
 
     Route::prefix('savings')->group(function () {
+            // Download template
+            Route::get('/import/template', [App\Http\Controllers\Api\SavingController::class , 'downloadTemplate'])
+                ->middleware('role:admin,manager')
+                ->name('savings.import.template');
+
+            // Export to Excel
+            Route::get('/export', [App\Http\Controllers\Api\SavingController::class , 'exportExcel'])
+                ->middleware('role:admin,manager')
+                ->name('savings.export');
+
             // Read operations
             Route::get('/', [App\Http\Controllers\Api\SavingController::class , 'index']);
             Route::get('/summary', [App\Http\Controllers\Api\SavingController::class , 'getSummary']);
@@ -221,20 +231,10 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
             Route::post('/{id}/approve', [App\Http\Controllers\Api\SavingController::class , 'approve'])
                 ->middleware('role:admin,manager');
 
-            // Download template
-            Route::get('/import/template', [App\Http\Controllers\Api\SavingController::class, 'downloadTemplate'])
-                ->middleware('role:admin,manager')
-                ->name('savings.import.template');
-            
-            // Import from Excel
-            Route::post('/import', [App\Http\Controllers\Api\SavingController::class, 'importExcel'])
+            // Import from Excel (POST is fine anywhere but grouping specific routes is good)
+            Route::post('/import', [App\Http\Controllers\Api\SavingController::class , 'importExcel'])
                 ->middleware('role:admin,manager')
                 ->name('savings.import');
-            
-            // Export to Excel
-            Route::get('/export', [App\Http\Controllers\Api\SavingController::class, 'exportExcel'])
-                ->middleware('role:admin,manager')
-                ->name('savings.export');
 
         }
         );
@@ -285,21 +285,22 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
             Route::get('/{loanId}/schedule', [App\Http\Controllers\Api\InstallmentController::class , 'schedule']);
 
             // Download template
-            Route::get('/import/template', [App\Http\Controllers\Api\LoanController::class, 'downloadTemplate'])
+            Route::get('/import/template', [App\Http\Controllers\Api\LoanController::class , 'downloadTemplate'])
                 ->middleware('role:admin,manager')
                 ->name('loans.import.template');
-            
+
             // Import from Excel
-            Route::post('/import', [App\Http\Controllers\Api\LoanController::class, 'importExcel'])
+            Route::post('/import', [App\Http\Controllers\Api\LoanController::class , 'importExcel'])
                 ->middleware('role:admin,manager')
                 ->name('loans.import');
-            
+
             // Export to Excel
-            Route::get('/export', [App\Http\Controllers\Api\LoanController::class, 'exportExcel'])
+            Route::get('/export', [App\Http\Controllers\Api\LoanController::class , 'exportExcel'])
                 ->middleware('role:admin,manager')
                 ->name('loans.export');
 
-        });
+        }
+        );
 
         // Installments
         Route::prefix('installments')->group(function () {
