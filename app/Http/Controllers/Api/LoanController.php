@@ -269,7 +269,7 @@ class LoanController extends Controller
 
             if ($request->status === 'approved') {
                 $loan->update([
-                    'status' => 'disbursed',
+                    'status' => 'active',
                     'approval_date' => now(),
                     'approved_by' => $user->id,
                     'disbursement_date' => $request->disbursement_date ?? now(),
