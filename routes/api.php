@@ -258,6 +258,18 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
             // Read operations
             Route::get('/', [App\Http\Controllers\Api\LoanController::class , 'index']);
             Route::get('/summary', [App\Http\Controllers\Api\LoanController::class , 'getSummary']);
+
+            // ✅ Import/Export SEBELUM /{id}
+            Route::get('/import/template', [LoanController::class, 'downloadTemplate'])
+                ->middleware('role:admin,manager')
+                ->name('loans.import.template');
+            Route::get('/export', [LoanController::class, 'exportExcel'])
+                ->middleware('role:admin,manager')
+                ->name('loans.export');
+            Route::post('/import', [LoanController::class, 'importExcel'])
+                ->middleware('role:admin,manager')
+                ->name('loans.import');
+
             Route::get('/{id}', [App\Http\Controllers\Api\LoanController::class , 'show']);
 
             // Write operations
@@ -283,21 +295,6 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
             // Installments for specific loan
             Route::get('/{loanId}/installments', [App\Http\Controllers\Api\InstallmentController::class , 'index']);
             Route::get('/{loanId}/schedule', [App\Http\Controllers\Api\InstallmentController::class , 'schedule']);
-
-            // Download template
-            Route::get('/import/template', [App\Http\Controllers\Api\LoanController::class , 'downloadTemplate'])
-                ->middleware('role:admin,manager')
-                ->name('loans.import.template');
-
-            // Import from Excel
-            Route::post('/import', [App\Http\Controllers\Api\LoanController::class , 'importExcel'])
-                ->middleware('role:admin,manager')
-                ->name('loans.import');
-
-            // Export to Excel
-            Route::get('/export', [App\Http\Controllers\Api\LoanController::class , 'exportExcel'])
-                ->middleware('role:admin,manager')
-                ->name('loans.export');
 
         }
         );
