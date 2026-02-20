@@ -269,26 +269,20 @@ class LoanController extends Controller
 
             if ($request->status === 'approved') {
                 $loan->update([
-                    'status' => 'approved',
+                    'status' => 'disbursed',
                     'approval_date' => now(),
                     'approved_by' => $user->id,
+                    'disbursement_date' => $request->disbursement_date ?? now(),
                 ]);
 
-                if ($request->has('disburse') && $request->boolean('disburse')) {
-                    $loan->update([
-                        'status' => 'disbursed',
-                        'disbursement_date' => $request->disbursement_date ?? now(),
-                    ]);
+                $loan->createInstallmentSchedule();
 
-                    $loan->createInstallmentSchedule();
-
-                    $cashAccount = CashAccount::find($loan->cash_account_id);
-                    if ($cashAccount) {
-                        $cashAccount->updateBalance($loan->principal_amount, 'subtract');
-                    }
-
-                    AutoJournalService::loanDisbursed($loan, $user->id);
+                $cashAccount = CashAccount::find($loan->cash_account_id);
+                if ($cashAccount) {
+                    $cashAccount->updateBalance($loan->principal_amount, 'subtract');
                 }
+
+                AutoJournalService::loanDisbursed($loan, $user->id);
             } else {
                 $loan->update([
                     'status' => 'rejected',
@@ -301,7 +295,7 @@ class LoanController extends Controller
 
             $loan->load(['user:id,full_name,employee_id', 'cashAccount:id,code,name', 'approvedBy:id,full_name']);
 
-            $message = $request->status === 'approved' ? 'Loan approved successfully' : 'Loan rejected successfully';
+            $message = $request->status === 'approved' ? 'Pinjaman disetujui dan langsung dicairkan' : 'Pinjaman ditolak';
 
             return $this->successResponse($loan, $message);
 
