@@ -144,18 +144,24 @@ class LoanController extends Controller
 
             $loanNumber = Loan::generateLoanNumber();
 
+            // Create loan
             $loan = Loan::create([
-                'user_id' => $request->user_id,
-                'cash_account_id' => $request->cash_account_id,
-                'loan_number' => $loanNumber,
-                'principal_amount' => $request->principal_amount,
-                'interest_percentage' => $interestPercentage,
-                'tenure_months' => $request->tenure_months,
-                'installment_amount' => $installmentAmount,
-                'status' => 'pending',
-                'application_date' => $request->application_date,
-                'loan_purpose' => $request->loan_purpose,
-                'document_path' => $request->document_path,
+                'user_id'                            => $request->user_id,
+                'cash_account_id'                    => $request->cash_account_id,
+                'loan_number'                        => $loanNumber,
+                'principal_amount'                   => $request->principal_amount,
+                'interest_percentage'                => $interestPercentage,
+                'tenure_months'                      => $request->tenure_months,
+                'installment_amount'                 => $installmentAmount,
+                'status'                             => 'pending',
+                'application_date'                   => $request->application_date,
+                'loan_purpose'                       => $request->loan_purpose,
+                'document_path'                      => $request->document_path,
+
+                // ✅ Tambahkan ini
+                'deduction_method'                          => $request->deduction_method ?? 'none',
+                'salary_deduction_percentage'               => $request->salary_deduction_percentage ?? 0,
+                'service_allowance_deduction_percentage'    => $request->service_allowance_deduction_percentage ?? 0,
             ]);
 
             $loan->load(['user:id,full_name,employee_id', 'cashAccount:id,code,name']);
@@ -206,15 +212,20 @@ class LoanController extends Controller
             );
 
             $loan->update([
-                'user_id' => $request->user_id,
-                'cash_account_id' => $request->cash_account_id,
-                'principal_amount' => $request->principal_amount,
-                'interest_percentage' => $interestPercentage,
-                'tenure_months' => $request->tenure_months,
-                'installment_amount' => $installmentAmount,
-                'application_date' => $request->application_date,
-                'loan_purpose' => $request->loan_purpose,
-                'document_path' => $request->document_path,
+                'user_id'                            => $request->user_id,
+                'cash_account_id'                    => $request->cash_account_id,
+                'principal_amount'                   => $request->principal_amount,
+                'interest_percentage'                => $interestPercentage,
+                'tenure_months'                      => $request->tenure_months,
+                'installment_amount'                 => $installmentAmount,
+                'application_date'                   => $request->application_date,
+                'loan_purpose'                       => $request->loan_purpose,
+                'document_path'                      => $request->document_path,
+
+                // ✅ Tambahkan ini
+                'deduction_method'                          => $request->deduction_method ?? $loan->deduction_method,
+                'salary_deduction_percentage'               => $request->salary_deduction_percentage ?? $loan->salary_deduction_percentage,
+                'service_allowance_deduction_percentage'    => $request->service_allowance_deduction_percentage ?? $loan->service_allowance_deduction_percentage,
             ]);
 
             $loan->load(['user:id,full_name,employee_id', 'cashAccount:id,code,name']);
@@ -665,6 +676,9 @@ class LoanController extends Controller
                 $applicationDate = $sheet->getCell('E' . $row)->getValue();
                 $loanPurpose = $sheet->getCell('F' . $row)->getValue();
                 $notes = $sheet->getCell('G' . $row)->getValue();
+                $deductionMethod = $sheet->getCell('H' . $row)->getValue();
+                $salaryDeductionPercentage = $sheet->getCell('I' . $row)->getValue();
+                $serviceAllowanceDeductionPercentage = $sheet->getCell('J' . $row)->getValue();
                 
                 if (empty($userId) && empty($principalAmount)) {
                     continue;
@@ -679,6 +693,9 @@ class LoanController extends Controller
                     'application_date' => $applicationDate,
                     'loan_purpose' => $loanPurpose,
                     'notes' => $notes,
+                    'deduction_method' => $deductionMethod,
+                    'salary_deduction_percentage' => $salaryDeductionPercentage,
+                    'service_allowance_deduction_percentage' => $serviceAllowanceDeductionPercentage,
                 ];
                 
                 $validation = $this->validateLoanRow($rowData, $row);
