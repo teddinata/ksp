@@ -90,55 +90,76 @@ class SavingController extends Controller
 
             $cashAccount = CashAccount::findOrFail($request->cash_account_id);
 
-            // ✅ FIX: Use ->first()
             $interestRate = $cashAccount->currentSavingsRate()->first();
             $interestPercentage = $interestRate ? $interestRate->rate_percentage : 0;
 
             $finalAmount = Saving::calculateFinalAmount($request->amount, $interestPercentage);
 
-            // Determine saving_type_id
+            // ✅ Resolve saving_type_id dan savings_type dari kedua arah
             $savingTypeId = $request->saving_type_id;
-            if (!$savingTypeId && $request->savings_type) {
+            $savingsType = $request->savings_type;
+
+            // Jika hanya saving_type_id dikirim → resolve savings_type dari DB
+            if ($savingTypeId && !$savingsType) {
+                $savingType = \App\Models\SavingType::find($savingTypeId);
+                if (!$savingType) {
+                    return $this->errorResponse('Saving type tidak ditemukan', 404);
+                }
+                // Map code ke savings_type enum
+                $codeMapping = [
+                    'POKOK'    => 'principal',
+                    'WAJIB'    => 'mandatory',
+                    'SUKARELA' => 'voluntary',
+                    'HARIRAYA' => 'holiday',
+                ];
+                $savingsType = $codeMapping[$savingType->code] ?? strtolower($savingType->code);
+            }
+
+            // Jika hanya savings_type dikirim → resolve saving_type_id dari DB
+            if ($savingsType && !$savingTypeId) {
                 $typeMapping = [
                     'principal' => 'POKOK',
                     'mandatory' => 'WAJIB',
                     'voluntary' => 'SUKARELA',
-                    'holiday' => 'HARIRAYA',
+                    'holiday'   => 'HARIRAYA',
                 ];
-                if (isset($typeMapping[$request->savings_type])) {
-                    $savingType = \App\Models\SavingType::where('code', $typeMapping[$request->savings_type])->first();
+                if (isset($typeMapping[$savingsType])) {
+                    $savingType = \App\Models\SavingType::where('code', $typeMapping[$savingsType])->first();
                     $savingTypeId = $savingType ? $savingType->id : null;
                 }
+            }
+
+            // Validasi: salah satu harus ada
+            if (!$savingsType) {
+                return $this->errorResponse('savings_type atau saving_type_id harus diisi', 422);
             }
 
             DB::beginTransaction();
 
             $saving = Saving::create([
-                'user_id' => $request->user_id,
-                'cash_account_id' => $request->cash_account_id,
-                'saving_type_id' => $savingTypeId, // New field
-                'savings_type' => $request->savings_type,
-                'amount' => $request->amount,
-                'interest_percentage' => $interestPercentage,
-                'final_amount' => $finalAmount,
-                'transaction_date' => $request->transaction_date,
-                'status' => 'approved',
-                'notes' => $request->notes,
-                'approved_by' => $user->id,
+                'user_id'            => $request->user_id,
+                'cash_account_id'    => $request->cash_account_id,
+                'saving_type_id'     => $savingTypeId,
+                'savings_type'       => $savingsType,  // ✅ Selalu terisi
+                'amount'             => $request->amount,
+                'interest_percentage'=> $interestPercentage,
+                'final_amount'       => $finalAmount,
+                'transaction_date'   => $request->transaction_date,
+                'status'             => 'approved',
+                'notes'              => $request->notes,
+                'approved_by'        => $user->id,
             ]);
 
             $cashAccount->updateBalance($request->amount, 'add');
-
             AutoJournalService::savingApproved($saving, $user->id);
 
             DB::commit();
 
-            $saving->load(['user:id,full_name,employee_id', 'cashAccount:id,code,name', 'approvedBy:id,full_name']);
+            $saving->load(['user:id,full_name,employee_id', 'cashAccount:id,code,name', 'approvedBy:id,full_name', 'savingType']);
 
             return $this->successResponse($saving, 'Saving transaction created successfully', 201);
 
-        }
-        catch (\Exception $e) {
+        } catch (\Exception $e) {
             DB::rollBack();
             return $this->errorResponse('Failed to create saving: ' . $e->getMessage(), 500);
         }
