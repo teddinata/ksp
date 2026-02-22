@@ -260,13 +260,13 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
             Route::get('/summary', [App\Http\Controllers\Api\LoanController::class , 'getSummary']);
 
             // ✅ Import/Export SEBELUM /{id}
-            Route::get('/import/template', [App\Http\Controllers\Api\LoanController::class, 'downloadTemplate'])
+            Route::get('/import/template', [App\Http\Controllers\Api\LoanController::class , 'downloadTemplate'])
                 ->middleware('role:admin,manager')
                 ->name('loans.import.template');
-            Route::get('/export', [App\Http\Controllers\Api\LoanController::class, 'exportExcel'])
+            Route::get('/export', [App\Http\Controllers\Api\LoanController::class , 'exportExcel'])
                 ->middleware('role:admin,manager')
                 ->name('loans.export');
-            Route::post('/import', [App\Http\Controllers\Api\LoanController::class, 'importExcel'])
+            Route::post('/import', [App\Http\Controllers\Api\LoanController::class , 'importExcel'])
                 ->middleware('role:admin,manager')
                 ->name('loans.import');
 
@@ -627,6 +627,22 @@ Route::middleware(['jwt.auth'])->group(function () {
             Route::delete('/{id}', [App\Http\Controllers\Api\AssetController::class , 'destroy']);
             Route::post('/{id}/calculate-depreciation', [App\Http\Controllers\Api\AssetController::class , 'calculateDepreciation']);
             Route::get('/{id}/depreciation-schedule', [App\Http\Controllers\Api\AssetController::class , 'depreciationSchedule']);
+        }
+        );
+    });
+
+/*
+ |--------------------------------------------------------------------------
+ | Settings Routes
+ |--------------------------------------------------------------------------
+ */
+Route::middleware(['jwt.auth'])->group(function () {
+    Route::prefix('settings')->group(function () {
+            Route::get('/', [App\Http\Controllers\Api\SettingController::class , 'index']);
+            Route::post('/{group}', [App\Http\Controllers\Api\SettingController::class , 'update'])
+                ->middleware('role:admin,manager');
+            Route::put('/{group}', [App\Http\Controllers\Api\SettingController::class , 'update'])
+                ->middleware('role:admin,manager');
         }
         );
     });
