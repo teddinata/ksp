@@ -172,7 +172,7 @@ class InstallmentController extends Controller
     {
         try {
             $user = auth()->user();
-            $days = $request->get('days', 7); // Default 7 days
+            $days = (int) $request->get('days', 7); // Default 7 days
 
             $query = Installment::with([
                 'loan.user:id,full_name,employee_id',
