@@ -233,7 +233,7 @@ class MemberController extends Controller
 
             // Access Control: Members can only update their own profile
             if ($user->isMember() && $user->id != $id) {
-                return $this->errorResponse('Access denied', 403);
+                return $this->errorResponse('Hanya dapat mengubah profil sendiri', 403);
             }
 
             $member = User::findOrFail($id);
@@ -241,6 +241,11 @@ class MemberController extends Controller
             // Validation
             $validated = $request->validate([
                 'full_name' => 'sometimes|string|max:255',
+                'employee_id' => [
+                    'sometimes',
+                    'string',
+                    Rule::unique('users')->ignore($member->id)
+                ],
                 'email' => [
                     'sometimes',
                     'email',
@@ -257,21 +262,31 @@ class MemberController extends Controller
             // Only admin can change status
             if (isset($validated['status']) && !$user->isAdmin()) {
                 return $this->errorResponse(
-                    'Only administrators can change member status',
+                    'Hanya admin yang dapat mengubah status',
                     403
                 );
+            }
+
+            // Only admin or manager can change employee_id
+            if (isset($validated['employee_id']) && $validated['employee_id'] !== $member->employee_id) {
+                if (!$user->isAdmin() && !$user->isManager()) {
+                    return $this->errorResponse(
+                        'Hanya admin dan manager yang dapat mengubah ID anggota',
+                        403
+                    );
+                }
             }
 
             $member->update($validated);
 
             return $this->successResponse(
                 $member,
-                'Profile updated successfully'
+                'Profil anggota berhasil diperbarui'
             );
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             return $this->errorResponse(
-                'Validation failed',
+                'Validasi gagal',
                 422,
                 $e->errors()
             );
@@ -279,7 +294,7 @@ class MemberController extends Controller
             return $this->errorResponse('Member not found', 404);
         } catch (\Exception $e) {
             return $this->errorResponse(
-                'Failed to update profile: ' . $e->getMessage(),
+                'Gagal memperbarui profil: ' . $e->getMessage(),
                 500
             );
         }
@@ -299,7 +314,7 @@ class MemberController extends Controller
 
             // Access Control: Members can only change their own password
             if ($user->isMember() && $user->id != $id) {
-                return $this->errorResponse('Access denied', 403);
+                return $this->errorResponse('Hanya anggota yang dapat mengubah password', 403);
             }
 
             $member = User::findOrFail($id);
