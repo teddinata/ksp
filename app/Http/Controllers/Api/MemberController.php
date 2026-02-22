@@ -105,6 +105,53 @@ class MemberController extends Controller
     }
 
     /**
+     * Display a listing of management users (Admin/Manager).
+     * 
+     * @param Request $request
+     * @return JsonResponse
+     */
+    public function managementIndex(Request $request): JsonResponse
+    {
+        try {
+            $user = auth()->user();
+
+            // Access Control: Only Admin/Manager can see this list
+            if ($user->isMember()) {
+                return $this->errorResponse('Access denied', 403);
+            }
+
+            $query = User::query()->whereIn('role', ['admin', 'manager']);
+
+            // Search by name, email, or employee ID
+            if ($request->has('search')) {
+                $search = $request->search;
+                $query->where(function($q) use ($search) {
+                    $q->where('full_name', 'like', "%{$search}%")
+                      ->orWhere('email', 'like', "%{$search}%")
+                      ->orWhere('employee_id', 'like', "%{$search}%");
+                });
+            }
+
+            // Filter by role
+            if ($request->has('role')) {
+                $query->where('role', $request->role);
+            }
+
+            // Pagination
+            $perPage = $request->get('per_page', 15);
+            $staff = $query->paginate($perPage);
+
+            return $this->paginatedResponse($staff, 'Management users retrieved successfully');
+
+        } catch (\Exception $e) {
+            return $this->errorResponse(
+                'Failed to retrieve management users: ' . $e->getMessage(),
+                500
+            );
+        }
+    }
+
+    /**
      * Get member profile.
      * 
      * Returns own profile for members, or specific member for admin/manager.
@@ -174,8 +221,9 @@ class MemberController extends Controller
 
             $member = User::findOrFail($id);
 
-            if (!$member->isMember()) {
-                return $this->errorResponse('User is not a member', 400);
+            // Access Control: Only admin/manager can see non-member profiles (staff)
+            if (!$member->isMember() && $user->isMember()) {
+                return $this->errorResponse('Hanya admin dan manager yang dapat melihat profil staff', 403);
             }
 
             // Full member details

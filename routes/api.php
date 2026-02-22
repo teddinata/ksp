@@ -442,6 +442,10 @@ Route::middleware(['jwt.auth', 'activity.log'])->group(function () {
             // Profile
             Route::get('/profile', [App\Http\Controllers\Api\MemberController::class , 'profile']);
 
+            // Management/Staff list (Admin & Manager only)
+            Route::get('/management', [App\Http\Controllers\Api\MemberController::class , 'managementIndex'])
+                ->middleware('role:admin,manager');
+
             // Statistics
             Route::get('/statistics', [App\Http\Controllers\Api\MemberController::class , 'statistics'])
                 ->middleware('role:admin,manager');
